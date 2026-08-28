@@ -1,0 +1,74 @@
+/*
+ * Forescout Style Template
+ * ------------------------
+ * Brand tokens + header component extracted live from the real Forescout
+ * Console installer page (https://<EM>/management-setup/ManagementSetup.htm)
+ * on 2026-08-28 -- colors, logo, and font stack pulled directly from that
+ * page's own <style> block and image assets, not guessed. Font file itself
+ * (Proxima Nova) is NOT bundled here -- it's a commercially licensed font
+ * shipped by Forescout with the appliance, so this stack falls back to
+ * Segoe UI/Arial instead of embedding/redistributing it.
+ *
+ * Reusable across any Forescout-branded internal tool: link this file
+ * after the app's own stylesheet, then drop in the .forescout-header
+ * markup block (see README note at the bottom of this file) at the top
+ * of each page.
+ */
+
+:root {
+    --fs-navy: #384d5f;        /* installer page background (sampled, ~flat) */
+    --fs-navy-dark: #2c3d4b;   /* darker shade for header depth/border */
+    --fs-blue: #00aeef;        /* Forescout brand accent blue (downloadLink color) */
+    --fs-slate: #aab9c6;       /* subtitle/muted text on dark */
+    --fs-separator: #8b99a6;   /* installer page's .seperator color */
+    --fs-font: 'Proxima Nova', 'Segoe UI', Arial, sans-serif;
+}
+
+.forescout-header {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    background: var(--fs-navy);
+    border-bottom: 2px solid var(--fs-separator);
+    padding: 0.85rem 1.5rem;
+    margin: -2rem -1rem 1.5rem;  /* cancels body's default padding (style.css) so the bar spans edge-to-edge */
+    font-family: var(--fs-font);
+}
+
+.forescout-header img {
+    height: 42px;
+    width: auto;
+    display: block;
+}
+
+.forescout-header .forescout-header-title {
+    color: #fff;
+    font-size: 1.15rem;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.forescout-header .forescout-header-title small {
+    display: block;
+    color: var(--fs-slate);
+    font-size: 0.75rem;
+    font-weight: 400;
+}
+
+/*
+ * README -- markup to drop at the very top of <body>, right after the
+ * opening tag, on every page:
+ *
+ *   <div class="forescout-header">
+ *     <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
+ *     <div class="forescout-header-title">
+ *       Forescout Tech Support Log Collection Tool
+ *       <small>Enterprise Manager 192.168.22.215</small>
+ *     </div>
+ *   </div>
+ *
+ * Load order in <head>: style.css first, then forescout-brand.css --
+ * the brand file only adds the header component and tokens, it doesn't
+ * override style.css's own --accent (see style.css, which is set to the
+ * Forescout blue directly to match).
+ */

@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>DNAC to Eyesight Switch Sync</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='forescout-brand.css') }}">
+</head>
+<body>
+    <div class="forescout-header">
+        <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
+        <div class="forescout-header-title">
+            DNAC to Eyesight Switch Sync
+        </div>
+    </div>
+    <main>
+        <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:0.5rem;">
+            <h1 style="margin:0;">DNAC to Eyesight Switch Sync</h1>
+            <div class="hint">
+                v{{ version }} &middot; deployed {{ deployed_at }}
+                &middot; <form method="post" action="/logout" style="display:inline;"><button type="submit" class="btn-small btn-secondary">Logout</button></form>
+            </div>
+        </div>
+        <p class="subtitle">Pulls the switch inventory from Cisco DNAC and reconciles it into Forescout Eyesight.</p>
+
+        <div class="tabs">
+            <button type="button" class="tab-btn active" data-tab-target="config">Config</button>
+            <button type="button" class="tab-btn" data-tab-target="automate">Automate Switch Sync</button>
+            <button type="button" class="tab-btn" data-tab-target="manual">Manual Manage</button>
+            <button type="button" class="tab-btn" data-tab-target="history">History</button>
+        </div>
+
+        <!-- ============================= CONFIG ============================= -->
+        <section class="tab-panel" data-tab-panel="config">
+            <div class="grid-3">
+                <div class="card">
+                    <h3>Cisco DNAC</h3>
+                    <form id="dnac-form">
+                        <label><span class="field-label">URL (host only, no https://)</span>
+                            <input type="text" name="url" value="{{ config.dnac.url }}" placeholder="sandboxdnac.cisco.com"></label>
+                        <label><span class="field-label">Username</span>
+                            <input type="text" name="username" value="{{ config.dnac.username }}"></label>
+                        <label><span class="field-label">Password</span>
+                            <input type="password" name="password" value="{{ config.dnac.password }}"></label>
+                        <label><span class="field-label">Device family filter (regex)</span>
+                            <input type="text" name="family_filter" value="{{ config.dnac.family_filter }}"></label>
+                        <label><span class="field-label">Page limit (max 500)</span>
+                            <input type="number" name="page_limit" value="{{ config.dnac.page_limit }}" min="1" max="500"></label>
+                        <label><input type="checkbox" name="ssl_verify" {% if config.dnac.ssl_verify %}checked{% endif %}> Verify SSL certificate</label>
+                        <button type="submit">Save</button>
+                        <span class="hint save-status"></span>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3>Forescout Eyesight</h3>
+                    <form id="eyesight-form">
+                        <label><span class="field-label">CA URL (host only, no https://)</span>
+                            <input type="text" name="url" value="{{ config.eyesight.url }}" placeholder="192.168.22.215"></label>
+                        <label><span class="field-label">Username</span>
+                            <input type="text" name="username" value="{{ config.eyesight.username }}"></label>
+                        <label><span class="field-label">Password</span>
+                            <input type="password" name="password" value="{{ config.eyesight.password }}"></label>
+                        <label><span class="field-label">Reconcile mode</span>
+                            <select name="trim_or_delete">
+                                <option value="Trim" {% if config.eyesight.trim_or_delete == "Trim" %}selected{% endif %}>Trim -- leave Eyesight's duplicate, drop DNAC's</option>
+                                <option value="Delete" {% if config.eyesight.trim_or_delete == "Delete" %}selected{% endif %}>Delete -- remove Eyesight's duplicate, re-add fresh from DNAC</option>
+                            </select></label>
+                        <label><input type="checkbox" name="ssl_verify" {% if config.eyesight.ssl_verify %}checked{% endif %}> Verify SSL certificate</label>
+                        <label><span class="field-label">Switch managers (comma-separated appliance IPs)</span>
+                            <input type="text" name="switch_managers" value="{{ config.switch_managers|join(', ') }}"></label>
+                        <label><span class="field-label">Switch profile rules (one per line: regex|ProfileName, first match wins)</span>
+                            <textarea name="switch_profiles">{{ config.switch_profiles }}</textarea></label>
+                        <button type="submit">Save</button>
+                        <span class="hint save-status"></span>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3>General</h3>
+                    <form id="general-form">
+                        <label><span class="field-label">Log level</span>
+                            <select name="log_level">
+                                <option value="INFO" {% if config.general.log_level == "INFO" %}selected{% endif %}>Info</option>
+                                <option value="DEBUG" {% if config.general.log_level == "DEBUG" %}selected{% endif %}>Debug</option>
+                            </select></label>
+                        <label><span class="field-label">Log/history retention (days)</span>
+                            <input type="number" name="retention_days" value="{{ config.general.retention_days }}" min="1" max="365"></label>
+                        <hr style="border-color:var(--border); margin:1rem 0;">
+                        <label><input type="checkbox" name="proxy_enable" {% if config.proxy.enable %}checked{% endif %}> Use a proxy to reach DNAC</label>
+                        <label><span class="field-label">Proxy IP</span>
+                            <input type="text" name="proxy_ip" value="{{ config.proxy.ip }}"></label>
+                        <label><span class="field-label">Proxy port</span>
+                            <input type="text" name="proxy_port" value="{{ config.proxy.port }}"></label>
+                        <label><span class="field-label">Proxy username (optional)</span>
+                            <input type="text" name="proxy_username" value="{{ config.proxy.username }}"></label>
+                        <label><span class="field-label">Proxy password (optional)</span>
+                            <input type="password" name="proxy_password" value="{{ config.proxy.password }}"></label>
+                        <button type="submit">Save</button>
+                        <span class="hint save-status"></span>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================= AUTOMATE SWITCH SYNC ========================= -->
+        <section class="tab-panel tab-panel-hidden" data-tab-panel="automate">
+            <div class="card">
+                <h3>Schedule</h3>
+                <form id="schedule-form" class="row">
+                    <label><input type="checkbox" name="enabled" {% if config.schedule.enabled %}checked{% endif %}> Run automatically, once a day at</label>
+                    <label style="max-width:8rem;"><input type="time" name="time" value="{{ config.schedule.time }}"></label>
+                    <button type="submit">Save schedule</button>
+                    <span class="hint save-status"></span>
+                </form>
+            </div>
+            <div class="card">
+                <h3>Run now</h3>
+                <p class="hint">Runs the full reconcile immediately, outside the schedule. "Dry run" shows what would change without calling Eyesight.</p>
+                <button type="button" id="run-now-btn">Run sync now</button>
+                <button type="button" id="dry-run-btn" class="btn-secondary">Dry run</button>
+                <div id="run-result" style="margin-top:1rem;"></div>
+            </div>
+            <div class="card">
+                <h3>Last run summary</h3>
+                <div id="last-run-summary">
+                    {% if history %}
+                    {% set last = history[0] %}
+                    <table>
+                        <tr><th>When</th><td>{{ last.timestamp_display }}</td></tr>
+                        <tr><th>Result</th><td>{% if last.success %}<span class="badge badge-ok">OK</span>{% else %}<span class="badge badge-err">FAILED</span>{% endif %}</td></tr>
+                        <tr><th>Received from DNAC</th><td>{{ last.dnac_count }}</td></tr>
+                        <tr><th>Currently in Eyesight</th><td>{{ last.eyesight_count }}</td></tr>
+                        <tr><th>Added</th><td>{{ last.added }}</td></tr>
+                        <tr><th>Removed</th><td>{{ last.removed }}</td></tr>
+                        <tr><th>Unchanged</th><td>{{ last.unchanged }}</td></tr>
+                    </table>
+                    {% else %}
+                    <p class="hint">No runs yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================= MANUAL MANAGE ============================= -->
+        <section class="tab-panel tab-panel-hidden" data-tab-panel="manual">
+            <div class="card">
+                <h3>Add a switch</h3>
+                <form id="manual-add-form" class="row">
+                    <label><span class="field-label">Management IP</span><input type="text" name="ip" required></label>
+                    <label><span class="field-label">Profile name</span><input type="text" name="profile" required></label>
+                    <label><span class="field-label">Connecting appliance</span><input type="text" name="manager" required></label>
+                    <label><span class="field-label">Comment</span><input type="text" name="comment"></label>
+                    <button type="submit">Add</button>
+                </form>
+                <div id="manual-add-result"></div>
+            </div>
+            <div class="card">
+                <h3>Current Eyesight switches <button type="button" id="manual-refresh-btn" class="btn-small btn-secondary">Refresh</button></h3>
+                <div id="manual-switches-table"><p class="hint">Click Refresh to load.</p></div>
+            </div>
+        </section>
+
+        <!-- ============================= HISTORY ============================= -->
+        <section class="tab-panel tab-panel-hidden" data-tab-panel="history">
+            <div class="card">
+                <h3>Run history <button type="button" id="history-refresh-btn" class="btn-small btn-secondary">Refresh</button></h3>
+                <table id="history-table">
+                    <tr><th>When</th><th>Trigger</th><th>Result</th><th>DNAC</th><th>Eyesight</th><th>Added</th><th>Removed</th><th>Log</th></tr>
+                    {% for h in history %}
+                    <tr>
+                        <td>{{ h.timestamp_display }}</td>
+                        <td>{{ h.triggered_by }}{% if h.dry_run %} (dry run){% endif %}</td>
+                        <td>{% if h.success %}<span class="badge badge-ok">OK</span>{% else %}<span class="badge badge-err">FAILED</span>{% endif %}</td>
+                        <td>{{ h.dnac_count }}</td>
+                        <td>{{ h.eyesight_count }}</td>
+                        <td>{{ h.added }}</td>
+                        <td>{{ h.removed }}</td>
+                        <td><a href="/api/history/{{ h.log_file }}/log" target="_blank">view</a></td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        (function () {
+            "use strict";
+
+            function escapeHtml(s) {
+                return (s === null || s === undefined ? "" : String(s))
+                    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            }
+
+            // --- Tab switching (mirrors forescout-lookup's .page-tab-btn convention) ---
+            document.querySelectorAll(".tab-btn").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                    document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("tab-panel-hidden"));
+                    btn.classList.add("active");
+                    const panel = document.querySelector('[data-tab-panel="' + btn.dataset.tabTarget + '"]');
+                    if (panel) panel.classList.remove("tab-panel-hidden");
+                });
+            });
+
+            // --- Config save helpers ---
+            function saveSection(section, values, statusEl) {
+                statusEl.textContent = "saving...";
+                return fetch("/api/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ section: section, values: values }),
+                }).then(r => r.json()).then(d => {
+                    if (d.error) { statusEl.textContent = "error: " + d.error; return false; }
+                    statusEl.textContent = "saved.";
+                    setTimeout(() => { statusEl.textContent = ""; }, 3000);
+                    return true;
+                }).catch(err => { statusEl.textContent = "failed: " + err; return false; });
+            }
+
+            const dnacForm = document.getElementById("dnac-form");
+            dnacForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const fd = new FormData(dnacForm);
+                saveSection("dnac", {
+                    url: fd.get("url"), username: fd.get("username"), password: fd.get("password"),
+                    family_filter: fd.get("family_filter"), page_limit: parseInt(fd.get("page_limit"), 10) || 400,
+                    ssl_verify: fd.has("ssl_verify"),
+                }, dnacForm.querySelector(".save-status"));
+            });
+
+            const eyesightForm = document.getElementById("eyesight-form");
+            eyesightForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const fd = new FormData(eyesightForm);
+                const statusEl = eyesightForm.querySelector(".save-status");
+                const managers = (fd.get("switch_managers") || "").split(",").map(s => s.trim()).filter(Boolean);
+                Promise.all([
+                    saveSection("eyesight", {
+                        url: fd.get("url"), username: fd.get("username"), password: fd.get("password"),
+                        trim_or_delete: fd.get("trim_or_delete"), ssl_verify: fd.has("ssl_verify"),
+                    }, statusEl),
+                    saveSection("switch_managers", managers, statusEl),
+                    saveSection("switch_profiles", fd.get("switch_profiles") || "", statusEl),
+                ]).then(() => { statusEl.textContent = "saved."; setTimeout(() => { statusEl.textContent = ""; }, 3000); });
+            });
+
+            const generalForm = document.getElementById("general-form");
+            generalForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const fd = new FormData(generalForm);
+                const statusEl = generalForm.querySelector(".save-status");
+                Promise.all([
+                    saveSection("general", {
+                        log_level: fd.get("log_level"), retention_days: parseInt(fd.get("retention_days"), 10) || 30,
+                    }, statusEl),
+                    saveSection("proxy", {
+                        enable: fd.has("proxy_enable"), ip: fd.get("proxy_ip"), port: fd.get("proxy_port"),
+                        username: fd.get("proxy_username"), password: fd.get("proxy_password"),
+                    }, statusEl),
+                ]).then(() => { statusEl.textContent = "saved."; setTimeout(() => { statusEl.textContent = ""; }, 3000); });
+            });
+
+            const scheduleForm = document.getElementById("schedule-form");
+            scheduleForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const fd = new FormData(scheduleForm);
+                saveSection("schedule", {
+                    enabled: fd.has("enabled"), time: fd.get("time"),
+                }, scheduleForm.querySelector(".save-status"));
+            });
+
+            // --- Run now / dry run ---
+            function runSync(dryRun, btn) {
+                const resultEl = document.getElementById("run-result");
+                btn.disabled = true;
+                resultEl.innerHTML = '<p class="hint"><span class="spinner"></span> Running...</p>';
+                const fd = new FormData();
+                if (dryRun) fd.set("dry_run", "1");
+                fetch("/api/sync/run", { method: "POST", body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        btn.disabled = false;
+                        const badge = d.success ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-err">FAILED</span>';
+                        resultEl.innerHTML = "<p>" + badge + " Received " + d.dnac_count + ", in Eyesight " + d.eyesight_count +
+                            ", added " + d.added + ", removed " + d.removed + ", unchanged " + d.unchanged +
+                            (d.error ? '</p><p class="error">' + escapeHtml(d.error) + "</p>" : "</p>") +
+                            '<p><a href="/api/history/' + encodeURIComponent(d.log_file) + '/log" target="_blank">view log</a></p>';
+                    })
+                    .catch(err => { btn.disabled = false; resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            }
+            document.getElementById("run-now-btn").addEventListener("click", function () { runSync(false, this); });
+            document.getElementById("dry-run-btn").addEventListener("click", function () { runSync(true, this); });
+
+            // --- Manual manage ---
+            function loadManualSwitches() {
+                const tableEl = document.getElementById("manual-switches-table");
+                tableEl.innerHTML = '<p class="hint"><span class="spinner"></span> Loading...</p>';
+                fetch("/api/manual/switches")
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { tableEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        if (!d.length) { tableEl.innerHTML = '<p class="hint">No switches in Eyesight.</p>'; return; }
+                        let html = "<table><tr><th>Management IP</th><th>Profile</th><th>Appliance</th><th></th></tr>";
+                        d.forEach(sw => {
+                            html += "<tr><td>" + escapeHtml(sw.managementAddress) + "</td><td>" +
+                                escapeHtml(sw.profileName || "") + "</td><td>" + escapeHtml(sw.connectingAppliance || "") +
+                                '</td><td><button type="button" class="btn-small btn-secondary manual-remove-btn" data-ip="' +
+                                escapeHtml(sw.managementAddress) + '">Remove</button></td></tr>';
+                        });
+                        html += "</table>";
+                        tableEl.innerHTML = html;
+                        tableEl.querySelectorAll(".manual-remove-btn").forEach(b => {
+                            b.addEventListener("click", () => {
+                                if (!window.confirm("Remove " + b.dataset.ip + " from Eyesight?")) return;
+                                const fd = new FormData();
+                                fd.set("ip", b.dataset.ip);
+                                fetch("/api/manual/remove", { method: "POST", body: fd })
+                                    .then(r => r.json())
+                                    .then(d2 => { if (d2.error) { window.alert(d2.error); return; } loadManualSwitches(); })
+                                    .catch(err => window.alert(String(err)));
+                            });
+                        });
+                    })
+                    .catch(err => { tableEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            }
+            document.getElementById("manual-refresh-btn").addEventListener("click", loadManualSwitches);
+
+            const manualAddForm = document.getElementById("manual-add-form");
+            manualAddForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const resultEl = document.getElementById("manual-add-result");
+                const fd = new FormData(manualAddForm);
+                fetch("/api/manual/add", { method: "POST", body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        resultEl.innerHTML = '<p class="success">Added.</p>';
+                        manualAddForm.reset();
+                        loadManualSwitches();
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            // --- History refresh ---
+            function loadHistory() {
+                const tableEl = document.getElementById("history-table");
+                fetch("/api/history")
+                    .then(r => r.json())
+                    .then(d => {
+                        let html = "<tr><th>When</th><th>Trigger</th><th>Result</th><th>DNAC</th><th>Eyesight</th><th>Added</th><th>Removed</th><th>Log</th></tr>";
+                        d.forEach(h => {
+                            const badge = h.success ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-err">FAILED</span>';
+                            html += "<tr><td>" + new Date(h.timestamp * 1000).toISOString() + "</td><td>" +
+                                escapeHtml(h.triggered_by) + (h.dry_run ? " (dry run)" : "") + "</td><td>" + badge + "</td><td>" +
+                                h.dnac_count + "</td><td>" + h.eyesight_count + "</td><td>" + h.added + "</td><td>" + h.removed +
+                                '</td><td><a href="/api/history/' + encodeURIComponent(h.log_file) + '/log" target="_blank">view</a></td></tr>';
+                        });
+                        tableEl.innerHTML = html;
+                    })
+                    .catch(() => {});
+            }
+            document.getElementById("history-refresh-btn").addEventListener("click", loadHistory);
+        })();
+    </script>
+</body>
+</html>

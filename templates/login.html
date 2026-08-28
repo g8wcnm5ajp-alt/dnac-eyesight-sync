@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>DNAC to Eyesight Switch Sync -- Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='forescout-brand.css') }}">
+</head>
+<body>
+    <div class="forescout-header">
+        <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
+        <div class="forescout-header-title">
+            DNAC to Eyesight Switch Sync
+        </div>
+    </div>
+    <main style="max-width:26em; margin:2rem auto;">
+        <p class="subtitle">Sign in to continue.</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <div class="card">
+            <form method="post" action="/login">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label>
+                    <span class="field-label">Username</span>
+                    <input type="text" name="username" autocomplete="username" required autofocus>
+                </label>
+                <label>
+                    <span class="field-label">Password</span>
+                    <input type="password" name="password" autocomplete="current-password" required>
+                </label>
+                <button type="submit">Sign in</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>
