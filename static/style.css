@@ -73,6 +73,7 @@ button:disabled { opacity: 0.5; cursor: default; }
     margin: 1rem 0;
 }
 .hint { color: var(--muted); font-size: 0.85rem; }
+.hint.error-text { color: var(--err); }
 
 .card {
     background: var(--panel);

@@ -48,6 +48,7 @@
                             <input type="number" name="page_limit" value="{{ config.dnac.page_limit }}" min="1" max="500"></label>
                         <label><input type="checkbox" name="ssl_verify" {% if config.dnac.ssl_verify %}checked{% endif %}> Verify SSL certificate</label>
                         <button type="submit">Save</button>
+                        <button type="button" class="btn-secondary test-connection-btn">Test connection</button>
                         <span class="hint save-status"></span>
                     </form>
                 </div>
@@ -72,6 +73,7 @@
                         <label><span class="field-label">Switch profile rules (one per line: regex|ProfileName, first match wins)</span>
                             <textarea name="switch_profiles">{{ config.switch_profiles }}</textarea></label>
                         <button type="submit">Save</button>
+                        <button type="button" class="btn-secondary test-connection-btn">Test connection</button>
                         <span class="hint save-status"></span>
                     </form>
                 </div>
@@ -219,6 +221,29 @@
                 }).catch(err => { statusEl.textContent = "failed: " + err; return false; });
             }
 
+            // --- Test connection -- David's ask: validate a token is received and there's no
+            // HTTP error, using whatever's currently typed in the form (not necessarily saved yet).
+            function testConnection(endpoint, values, btn, statusEl) {
+                btn.disabled = true;
+                const originalText = btn.textContent;
+                btn.textContent = "Testing...";
+                statusEl.textContent = "";
+                fetch(endpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(values),
+                }).then(r => r.json()).then(d => {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                    statusEl.textContent = d.ok ? "connection OK -- token received." : "failed: " + d.error;
+                    statusEl.className = "hint save-status " + (d.ok ? "" : "error-text");
+                }).catch(err => {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                    statusEl.textContent = "failed: " + err;
+                });
+            }
+
             const dnacForm = document.getElementById("dnac-form");
             dnacForm.addEventListener("submit", e => {
                 e.preventDefault();
@@ -228,6 +253,13 @@
                     family_filter: fd.get("family_filter"), page_limit: parseInt(fd.get("page_limit"), 10) || 400,
                     ssl_verify: fd.has("ssl_verify"),
                 }, dnacForm.querySelector(".save-status"));
+            });
+            dnacForm.querySelector(".test-connection-btn").addEventListener("click", () => {
+                const fd = new FormData(dnacForm);
+                testConnection("/api/test/dnac", {
+                    url: fd.get("url"), username: fd.get("username"), password: fd.get("password"),
+                    ssl_verify: fd.has("ssl_verify"),
+                }, dnacForm.querySelector(".test-connection-btn"), dnacForm.querySelector(".save-status"));
             });
 
             const eyesightForm = document.getElementById("eyesight-form");
@@ -244,6 +276,13 @@
                     saveSection("switch_managers", managers, statusEl),
                     saveSection("switch_profiles", fd.get("switch_profiles") || "", statusEl),
                 ]).then(() => { statusEl.textContent = "saved."; setTimeout(() => { statusEl.textContent = ""; }, 3000); });
+            });
+            eyesightForm.querySelector(".test-connection-btn").addEventListener("click", () => {
+                const fd = new FormData(eyesightForm);
+                testConnection("/api/test/eyesight", {
+                    url: fd.get("url"), username: fd.get("username"), password: fd.get("password"),
+                    ssl_verify: fd.has("ssl_verify"),
+                }, eyesightForm.querySelector(".test-connection-btn"), eyesightForm.querySelector(".save-status"));
             });
 
             const generalForm = document.getElementById("general-form");

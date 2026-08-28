@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from dnac_client import DnacClient, DnacClientError
+from eyesight_client import EyesightClient, EyesightClientError
 from scheduler import start_scheduler
 from sync_engine import (
     DATA_DIR, SyncEngineError, get_history, get_log_text, load_config, manual_add_switch,
@@ -219,6 +221,48 @@ def api_config_save():
     cfg[section] = values
     save_config(cfg)
     _log_activity("config_saved", section=section)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/test/dnac", methods=["POST"])
+def api_test_dnac():
+    """Tests the DNAC panel's *currently entered* (not necessarily saved) form values --
+    David's ask: validate a token is received and there's no HTTP error, before committing
+    credentials via Save. Proxy settings come from the already-saved config (proxy lives in
+    the General panel, not this form)."""
+    data = request.get_json(silent=True) or {}
+    cfg = load_config()
+    try:
+        client = DnacClient(
+            data.get("url", ""), data.get("username", ""), data.get("password", ""),
+            ssl_verify=bool(data.get("ssl_verify")), proxy_cfg=cfg["proxy"],
+        )
+        token = client.authenticate()
+    except DnacClientError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Unexpected error: {e}"}), 400
+    if not token:
+        return jsonify({"ok": False, "error": "Authenticated but no token was returned."}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/api/test/eyesight", methods=["POST"])
+def api_test_eyesight():
+    """Same as api_test_dnac, but for the Eyesight panel's currently entered form values."""
+    data = request.get_json(silent=True) or {}
+    try:
+        client = EyesightClient(
+            data.get("url", ""), data.get("username", ""), data.get("password", ""),
+            verify_ssl=bool(data.get("ssl_verify")),
+        )
+        token = client.authenticate()
+    except EyesightClientError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Unexpected error: {e}"}), 400
+    if not token:
+        return jsonify({"ok": False, "error": "Authenticated but no token was returned."}), 400
     return jsonify({"ok": True})
 
 

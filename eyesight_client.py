@@ -30,6 +30,14 @@ class EyesightClient:
     across requests to different config (each run reads fresh config)."""
 
     def __init__(self, base_url, username, password, verify_ssl=False, timeout=60):
+        # The Eyesight config field is documented as "host only, no https://" (matching
+        # DnacClient's own convention) -- unlike DnacClient, this was missing the scheme
+        # prepend, so a bare host like "192.168.22.215" produced an invalid URL. Caught live
+        # testing the new Test Connection button, 2026-08-28. Accepts a scheme if one was
+        # typed anyway, rather than doubling it up.
+        base_url = base_url.strip()
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"https://{base_url}"
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
