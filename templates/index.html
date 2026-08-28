@@ -146,6 +146,13 @@
 
         <!-- ============================= MANUAL MANAGE ============================= -->
         <section class="tab-panel tab-panel-hidden" data-tab-panel="manual">
+            <p class="hint">Every operation the real Switch Plugin REST API exposes (confirmed against its own OpenAPI spec) -- not just add/remove/list.</p>
+
+            <div class="card">
+                <h3>API health <button type="button" id="manual-healthcheck-btn" class="btn-small btn-secondary">Check</button></h3>
+                <div id="manual-healthcheck-result" class="hint"></div>
+            </div>
+
             <div class="card">
                 <h3>Add a switch</h3>
                 <form id="manual-add-form" class="row">
@@ -157,9 +164,87 @@
                 </form>
                 <div id="manual-add-result"></div>
             </div>
+
+            <div class="card">
+                <h3>Get / update a switch</h3>
+                <div class="row">
+                    <label><span class="field-label">Management IP</span><input type="text" id="manual-getswitch-ip"></label>
+                    <button type="button" id="manual-getswitch-btn" class="btn-secondary">Get</button>
+                </div>
+                <div id="manual-getswitch-result"></div>
+                <form id="manual-update-form" class="row" style="margin-top:0.75rem; border-top:1px solid var(--border); padding-top:0.75rem;">
+                    <label><span class="field-label">Management IP</span><input type="text" name="ip" required></label>
+                    <label><span class="field-label">Profile name</span><input type="text" name="profile" required></label>
+                    <label><span class="field-label">Connecting appliance</span><input type="text" name="manager" required></label>
+                    <label><span class="field-label">Comment</span><input type="text" name="comment"></label>
+                    <button type="submit">Update</button>
+                </form>
+                <div id="manual-update-result"></div>
+            </div>
+
             <div class="card">
                 <h3>Current Eyesight switches <button type="button" id="manual-refresh-btn" class="btn-small btn-secondary">Refresh</button></h3>
                 <div id="manual-switches-table"><p class="hint">Click Refresh to load.</p></div>
+            </div>
+
+            <div class="card">
+                <h3>Switch credentials</h3>
+                <p class="hint">Real device CLI/SNMP/802.1X secrets -- shown masked by default, never logged.</p>
+                <div class="row">
+                    <label><span class="field-label">Management IP</span><input type="text" id="manual-getswitchcred-ip"></label>
+                    <button type="button" id="manual-getswitchcred-btn" class="btn-secondary">Get</button>
+                </div>
+                <div id="manual-getswitchcred-result"></div>
+                <form id="manual-updateswitchcred-form" style="margin-top:0.75rem; border-top:1px solid var(--border); padding-top:0.75rem;">
+                    <div class="row">
+                        <label><span class="field-label">Management IP</span><input type="text" name="ip" required></label>
+                        <label><span class="field-label">CLI type</span><input type="text" name="cliType"></label>
+                        <label><span class="field-label">Comment</span><input type="text" name="comment"></label>
+                    </div>
+                    <div class="row">
+                        <label><span class="field-label">CLI password</span><input type="password" name="cliPassword" autocomplete="off"></label>
+                        <label><span class="field-label">CLI privileged password</span><input type="password" name="cliPrivilegedPassword" autocomplete="off"></label>
+                        <label><span class="field-label">802.1X RADIUS secret</span><input type="password" name="dot1xRadiusSecret" autocomplete="off"></label>
+                    </div>
+                    <div class="row">
+                        <label><span class="field-label">SNMP community</span><input type="password" name="snmpCommunity" autocomplete="off"></label>
+                        <label><span class="field-label">SNMP auth password</span><input type="password" name="snmpAuthPassword" autocomplete="off"></label>
+                        <label><span class="field-label">SNMP privacy password</span><input type="password" name="snmpPrivacyPassword" autocomplete="off"></label>
+                    </div>
+                    <p class="hint">Only fields you fill in are sent/changed -- leave the rest blank to keep them as-is.</p>
+                    <button type="submit">Update credentials</button>
+                </form>
+                <div id="manual-updateswitchcred-result"></div>
+            </div>
+
+            <div class="card">
+                <h3>Profile credentials</h3>
+                <p class="hint">Same as switch credentials, but shared by every switch assigned to a profile.</p>
+                <div class="row">
+                    <label><span class="field-label">Profile name</span><input type="text" id="manual-getprofilecred-name"></label>
+                    <button type="button" id="manual-getprofilecred-btn" class="btn-secondary">Get</button>
+                </div>
+                <div id="manual-getprofilecred-result"></div>
+                <form id="manual-updateprofilecred-form" style="margin-top:0.75rem; border-top:1px solid var(--border); padding-top:0.75rem;">
+                    <div class="row">
+                        <label><span class="field-label">Profile name</span><input type="text" name="profile" required></label>
+                        <label><span class="field-label">CLI type</span><input type="text" name="cliType"></label>
+                        <label><span class="field-label">Comment</span><input type="text" name="comment"></label>
+                    </div>
+                    <div class="row">
+                        <label><span class="field-label">CLI password</span><input type="password" name="cliPassword" autocomplete="off"></label>
+                        <label><span class="field-label">CLI privileged password</span><input type="password" name="cliPrivilegedPassword" autocomplete="off"></label>
+                        <label><span class="field-label">802.1X RADIUS secret</span><input type="password" name="dot1xRadiusSecret" autocomplete="off"></label>
+                    </div>
+                    <div class="row">
+                        <label><span class="field-label">SNMP community</span><input type="password" name="snmpCommunity" autocomplete="off"></label>
+                        <label><span class="field-label">SNMP auth password</span><input type="password" name="snmpAuthPassword" autocomplete="off"></label>
+                        <label><span class="field-label">SNMP privacy password</span><input type="password" name="snmpPrivacyPassword" autocomplete="off"></label>
+                    </div>
+                    <p class="hint">Only fields you fill in are sent/changed -- leave the rest blank to keep them as-is.</p>
+                    <button type="submit">Update credentials</button>
+                </form>
+                <div id="manual-updateprofilecred-result"></div>
             </div>
         </section>
 
@@ -345,7 +430,11 @@
                         d.forEach(sw => {
                             html += "<tr><td>" + escapeHtml(sw.managementAddress) + "</td><td>" +
                                 escapeHtml(sw.profileName || "") + "</td><td>" + escapeHtml(sw.connectingAppliance || "") +
-                                '</td><td><button type="button" class="btn-small btn-secondary manual-remove-btn" data-ip="' +
+                                '</td><td><button type="button" class="btn-small btn-secondary manual-edit-btn" data-ip="' +
+                                escapeHtml(sw.managementAddress) + '" data-profile="' + escapeHtml(sw.profileName || "") +
+                                '" data-manager="' + escapeHtml(sw.connectingAppliance || "") + '" data-comment="' +
+                                escapeHtml(sw.comment || "") + '">Edit</button> ' +
+                                '<button type="button" class="btn-small btn-secondary manual-remove-btn" data-ip="' +
                                 escapeHtml(sw.managementAddress) + '">Remove</button></td></tr>';
                         });
                         html += "</table>";
@@ -359,6 +448,16 @@
                                     .then(r => r.json())
                                     .then(d2 => { if (d2.error) { window.alert(d2.error); return; } loadManualSwitches(); })
                                     .catch(err => window.alert(String(err)));
+                            });
+                        });
+                        tableEl.querySelectorAll(".manual-edit-btn").forEach(b => {
+                            b.addEventListener("click", () => {
+                                const f = document.getElementById("manual-update-form");
+                                f.querySelector('[name="ip"]').value = b.dataset.ip;
+                                f.querySelector('[name="profile"]').value = b.dataset.profile;
+                                f.querySelector('[name="manager"]').value = b.dataset.manager;
+                                f.querySelector('[name="comment"]').value = b.dataset.comment;
+                                f.scrollIntoView({ block: "center" });
                             });
                         });
                     })
@@ -378,6 +477,151 @@
                         resultEl.innerHTML = '<p class="success">Added.</p>';
                         manualAddForm.reset();
                         loadManualSwitches();
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            // --- Health check ---
+            document.getElementById("manual-healthcheck-btn").addEventListener("click", () => {
+                const resultEl = document.getElementById("manual-healthcheck-result");
+                resultEl.innerHTML = '<span class="spinner"></span> Checking...';
+                fetch("/api/manual/healthcheck")
+                    .then(r => r.json())
+                    .then(d => {
+                        resultEl.innerHTML = d.ok
+                            ? '<span class="badge badge-ok">OK</span> ' + escapeHtml(d.result || "")
+                            : '<span class="badge badge-err">FAILED</span> ' + escapeHtml(d.error || "");
+                    })
+                    .catch(err => { resultEl.innerHTML = '<span class="badge badge-err">FAILED</span> ' + escapeHtml(String(err)); });
+            });
+
+            // --- Get / update a switch ---
+            document.getElementById("manual-getswitch-btn").addEventListener("click", () => {
+                const ip = document.getElementById("manual-getswitch-ip").value.trim();
+                const resultEl = document.getElementById("manual-getswitch-result");
+                if (!ip) { resultEl.innerHTML = '<p class="error">Enter a management IP first.</p>'; return; }
+                resultEl.innerHTML = '<span class="spinner"></span> Loading...';
+                fetch("/api/manual/switch?ip=" + encodeURIComponent(ip))
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        resultEl.innerHTML = "<table>" +
+                            "<tr><th>Management IP</th><td>" + escapeHtml(d.managementAddress || "") + "</td></tr>" +
+                            "<tr><th>Profile</th><td>" + escapeHtml(d.profileName || "") + "</td></tr>" +
+                            "<tr><th>Connecting appliance</th><td>" + escapeHtml(d.connectingAppliance || "") + "</td></tr>" +
+                            "<tr><th>Vendor</th><td>" + escapeHtml(d.vendor || "") + "</td></tr>" +
+                            "<tr><th>CLI connectivity</th><td>" + escapeHtml(d.cliConnectivityStatus || "") + "</td></tr>" +
+                            "<tr><th>SNMP connectivity</th><td>" + escapeHtml(d.snmpConnectivityStatus || "") + "</td></tr>" +
+                            "<tr><th>Comment</th><td>" + escapeHtml(d.comment || "") + "</td></tr>" +
+                            "<tr><th>Alerts</th><td>" + escapeHtml((d.alerts || []).join(", ")) + "</td></tr>" +
+                            "</table>";
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            const manualUpdateForm = document.getElementById("manual-update-form");
+            manualUpdateForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const resultEl = document.getElementById("manual-update-result");
+                const fd = new FormData(manualUpdateForm);
+                fetch("/api/manual/update", { method: "POST", body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        resultEl.innerHTML = '<p class="success">Updated.</p>';
+                        loadManualSwitches();
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            // --- Credentials: shared render helper -- masked by default, a "Show" toggle
+            // reveals them. Never sent anywhere but this page's own DOM. ---
+            const CREDENTIAL_LABELS = {
+                cliType: "CLI type", cliPassword: "CLI password", cliPrivilegedPassword: "CLI privileged password",
+                snmpCommunity: "SNMP community", snmpAuthPassword: "SNMP auth password",
+                snmpPrivacyPassword: "SNMP privacy password", dot1xRadiusSecret: "802.1X RADIUS secret",
+            };
+            const CREDENTIAL_SECRET_KEYS = ["cliPassword", "cliPrivilegedPassword", "snmpCommunity", "snmpAuthPassword", "snmpPrivacyPassword", "dot1xRadiusSecret"];
+
+            function renderCredentials(d, resultEl) {
+                let rows = "";
+                for (const key in CREDENTIAL_LABELS) {
+                    const val = d[key];
+                    if (val === undefined || val === null || val === "") continue;
+                    const isSecret = CREDENTIAL_SECRET_KEYS.includes(key);
+                    rows += "<tr><th>" + CREDENTIAL_LABELS[key] + "</th><td>" +
+                        '<span class="cred-value" data-real="' + escapeHtml(val) + '" data-secret="' + isSecret + '">' +
+                        (isSecret ? "••••••••" : escapeHtml(val)) + "</span></td></tr>";
+                }
+                if (!rows) { resultEl.innerHTML = '<p class="hint">No credential fields set.</p>'; return; }
+                resultEl.innerHTML =
+                    '<label style="margin-bottom:0.4rem;"><input type="checkbox" class="cred-reveal-toggle"> Show values</label>' +
+                    "<table>" + rows + "</table>";
+                const toggle = resultEl.querySelector(".cred-reveal-toggle");
+                toggle.addEventListener("change", () => {
+                    resultEl.querySelectorAll(".cred-value").forEach(span => {
+                        const reveal = toggle.checked || span.dataset.secret !== "true";
+                        span.textContent = reveal ? span.dataset.real : "••••••••";
+                    });
+                });
+            }
+
+            // --- Switch credentials ---
+            document.getElementById("manual-getswitchcred-btn").addEventListener("click", () => {
+                const ip = document.getElementById("manual-getswitchcred-ip").value.trim();
+                const resultEl = document.getElementById("manual-getswitchcred-result");
+                if (!ip) { resultEl.innerHTML = '<p class="error">Enter a management IP first.</p>'; return; }
+                resultEl.innerHTML = '<span class="spinner"></span> Loading...';
+                fetch("/api/manual/switch_credentials?ip=" + encodeURIComponent(ip))
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        renderCredentials(d, resultEl);
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            const manualUpdateSwitchCredForm = document.getElementById("manual-updateswitchcred-form");
+            manualUpdateSwitchCredForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const resultEl = document.getElementById("manual-updateswitchcred-result");
+                const fd = new FormData(manualUpdateSwitchCredForm);
+                fetch("/api/manual/switch_credentials", { method: "POST", body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        resultEl.innerHTML = '<p class="success">Credentials updated.</p>';
+                        manualUpdateSwitchCredForm.reset();
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            // --- Profile credentials ---
+            document.getElementById("manual-getprofilecred-btn").addEventListener("click", () => {
+                const name = document.getElementById("manual-getprofilecred-name").value.trim();
+                const resultEl = document.getElementById("manual-getprofilecred-result");
+                if (!name) { resultEl.innerHTML = '<p class="error">Enter a profile name first.</p>'; return; }
+                resultEl.innerHTML = '<span class="spinner"></span> Loading...';
+                fetch("/api/manual/profile_credentials?profile=" + encodeURIComponent(name))
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        renderCredentials(d, resultEl);
+                    })
+                    .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
+            });
+
+            const manualUpdateProfileCredForm = document.getElementById("manual-updateprofilecred-form");
+            manualUpdateProfileCredForm.addEventListener("submit", e => {
+                e.preventDefault();
+                const resultEl = document.getElementById("manual-updateprofilecred-result");
+                const fd = new FormData(manualUpdateProfileCredForm);
+                fetch("/api/manual/profile_credentials", { method: "POST", body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { resultEl.innerHTML = '<p class="error">' + escapeHtml(d.error) + "</p>"; return; }
+                        resultEl.innerHTML = '<p class="success">Credentials updated.</p>';
+                        manualUpdateProfileCredForm.reset();
                     })
                     .catch(err => { resultEl.innerHTML = '<p class="error">' + escapeHtml(String(err)) + "</p>"; });
             });

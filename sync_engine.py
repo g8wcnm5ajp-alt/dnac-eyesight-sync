@@ -355,6 +355,48 @@ def manual_remove_switch(ip):
     _eyesight_client_from_config().delete_switches([ip])
 
 
+def manual_health_check():
+    return _eyesight_client_from_config().health_check()
+
+
+def manual_get_switch(ip):
+    return _eyesight_client_from_config().get_switch(ip)
+
+
+def manual_update_switch(ip, profile_name, manager, comment=""):
+    if not profile_name:
+        raise SyncEngineError("Profile name is required.")
+    if not manager:
+        raise SyncEngineError("Connecting appliance is required.")
+    _eyesight_client_from_config().update_switches([{
+        "managementAddress": ip, "profileName": profile_name,
+        "connectingAppliance": manager, "comment": comment,
+    }])
+
+
+def manual_get_switch_credentials(ip):
+    return _eyesight_client_from_config().get_switch_credentials(ip)
+
+
+def manual_update_switch_credentials(ip, fields):
+    """fields: only the credential keys actually being changed (cliType, cliPassword,
+    cliPrivilegedPassword, snmpCommunity, snmpAuthPassword, snmpPrivacyPassword,
+    dot1xRadiusSecret, comment) -- matches the real API's own partial-update shape."""
+    if not fields:
+        raise SyncEngineError("At least one credential field is required.")
+    _eyesight_client_from_config().update_switch_credentials([{"managementAddress": ip, **fields}])
+
+
+def manual_get_profile_credentials(profile_name):
+    return _eyesight_client_from_config().get_profile_credentials(profile_name)
+
+
+def manual_update_profile_credentials(profile_name, fields):
+    if not fields:
+        raise SyncEngineError("At least one credential field is required.")
+    _eyesight_client_from_config().update_profile_credentials([{"profileName": profile_name, **fields}])
+
+
 def get_log_text(log_file):
     """Reads back one run's log file by name -- validated against the stored
     history entries first, so this can't be used to read an arbitrary path."""

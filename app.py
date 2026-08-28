@@ -25,7 +25,9 @@ from eyesight_client import EyesightClient, EyesightClientError
 from scheduler import start_scheduler
 from sync_engine import (
     DATA_DIR, SyncEngineError, get_history, get_log_text, load_config, manual_add_switch,
-    manual_list_switches, manual_remove_switch, run_sync, save_config,
+    manual_get_profile_credentials, manual_get_switch, manual_get_switch_credentials,
+    manual_health_check, manual_list_switches, manual_remove_switch, manual_update_profile_credentials,
+    manual_update_switch, manual_update_switch_credentials, run_sync, save_config,
 )
 
 app = Flask(__name__)
@@ -322,6 +324,109 @@ def api_manual_remove():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     _log_activity("manual_remove", ip=ip)
+    return jsonify({"ok": True})
+
+
+# Credential fields shared by both the switch- and profile-credentials update forms --
+# matches CredentialsSwitchToUpdate/CredentialsProfileToUpdate in the real API's own spec
+# (/switch/api/v2/api-docs, confirmed live 2026-08-28). Only fields actually present in the
+# submitted form are sent, matching the real API's own partial-update semantics -- an admin
+# changing just the SNMP community string shouldn't blank out the CLI password.
+_CREDENTIAL_FIELD_NAMES = (
+    "cliType", "cliPassword", "cliPrivilegedPassword", "snmpCommunity",
+    "snmpAuthPassword", "snmpPrivacyPassword", "dot1xRadiusSecret", "comment",
+)
+
+
+def _credential_fields_from_form():
+    return {k: v for k in _CREDENTIAL_FIELD_NAMES if (v := request.form.get(k, "").strip())}
+
+
+@app.route("/api/manual/healthcheck", methods=["GET"])
+def api_manual_healthcheck():
+    try:
+        return jsonify({"ok": True, "result": manual_health_check()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
+@app.route("/api/manual/switch", methods=["GET"])
+def api_manual_get_switch():
+    ip = request.args.get("ip", "").strip()
+    if not ip:
+        return jsonify({"error": "IP is required."}), 400
+    try:
+        return jsonify(manual_get_switch(ip))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/manual/update", methods=["POST"])
+def api_manual_update():
+    ip = request.form.get("ip", "").strip()
+    profile = request.form.get("profile", "").strip()
+    manager = request.form.get("manager", "").strip()
+    comment = request.form.get("comment", "").strip()
+    try:
+        manual_update_switch(ip, profile, manager, comment)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    _log_activity("manual_update", ip=ip, profile=profile, manager=manager)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/switch_credentials", methods=["GET"])
+def api_manual_get_switch_credentials():
+    """Returns real device secrets (CLI/SNMP/802.1X) straight from Eyesight -- rendered on the
+    live page only, never written to any log file (see _log_activity calls below, which log
+    the action and IP, deliberately never the credential values themselves)."""
+    ip = request.args.get("ip", "").strip()
+    if not ip:
+        return jsonify({"error": "IP is required."}), 400
+    try:
+        result = manual_get_switch_credentials(ip)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    _log_activity("manual_get_switch_credentials", ip=ip)
+    return jsonify(result)
+
+
+@app.route("/api/manual/switch_credentials", methods=["POST"])
+def api_manual_update_switch_credentials():
+    ip = request.form.get("ip", "").strip()
+    if not ip:
+        return jsonify({"error": "IP is required."}), 400
+    try:
+        manual_update_switch_credentials(ip, _credential_fields_from_form())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    _log_activity("manual_update_switch_credentials", ip=ip)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/profile_credentials", methods=["GET"])
+def api_manual_get_profile_credentials():
+    profile = request.args.get("profile", "").strip()
+    if not profile:
+        return jsonify({"error": "Profile name is required."}), 400
+    try:
+        result = manual_get_profile_credentials(profile)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    _log_activity("manual_get_profile_credentials", profile=profile)
+    return jsonify(result)
+
+
+@app.route("/api/manual/profile_credentials", methods=["POST"])
+def api_manual_update_profile_credentials():
+    profile = request.form.get("profile", "").strip()
+    if not profile:
+        return jsonify({"error": "Profile name is required."}), 400
+    try:
+        manual_update_profile_credentials(profile, _credential_fields_from_form())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    _log_activity("manual_update_profile_credentials", profile=profile)
     return jsonify({"ok": True})
 
 
