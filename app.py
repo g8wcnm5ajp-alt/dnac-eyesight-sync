@@ -9,15 +9,20 @@ same pattern as the sibling forescout-lookup Tech Support Collector:
 Flask + Docker, Deploy.sh/Remove.sh with a docker bridge network,
 login-gated HTTPS. See sync_engine.py for the reconcile logic itself.
 """
+import io
 import json
 import logging
 import os
 import secrets
+import shutil
 import ssl
+import subprocess
+import threading
 import time
+import zipfile
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dnac_client import DnacClient, DnacClientError
@@ -181,6 +186,162 @@ def change_password_route():
         "change_password.html", error=error, csrf_token=_csrf_token(),
         forced=_load_auth().get("must_change_password", False),
     )
+
+
+# ---------------------------------------------------------------------
+# HTTPS certificate management -- ported directly from the sibling
+# forescout-lookup app (David's ask, 2026-08-28: same section here as
+# there). Only meaningful once Deploy.sh mounts /certs (read-write)
+# and /host-apache-certs (read-only, this EM's own Apache SSL dir) --
+# both added to this app's Deploy.sh alongside this feature.
+# ---------------------------------------------------------------------
+CERT_DIR = "/certs"
+APACHE_CERT_MOUNT = "/host-apache-certs"
+
+
+def _cert_info(cert_path):
+    if not os.path.isfile(cert_path):
+        return None
+    try:
+        proc = subprocess.run(
+            ["openssl", "x509", "-in", cert_path, "-noout", "-subject", "-issuer", "-enddate", "-fingerprint", "-sha256"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except OSError as exc:
+        return {"error": str(exc)}
+    if proc.returncode != 0:
+        return {"error": proc.stderr.strip() or "openssl could not read this file."}
+    info = {}
+    for line in proc.stdout.splitlines():
+        if line.startswith("subject="):
+            info["subject"] = line[len("subject="):].strip()
+        elif line.startswith("issuer="):
+            info["issuer"] = line[len("issuer="):].strip()
+        elif line.startswith("notAfter="):
+            info["expires"] = line[len("notAfter="):].strip()
+        elif line.startswith("sha256 Fingerprint="):
+            info["fingerprint"] = line[len("sha256 Fingerprint="):].strip()
+    return info
+
+
+def _key_is_encrypted(key_path):
+    try:
+        with open(key_path) as f:
+            return "ENCRYPTED" in f.read()
+    except OSError:
+        return False
+
+
+def _verify_cert_key(cert_path, key_path, password):
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(cert_path, key_path, password=password or None)
+        return True, None
+    except (ssl.SSLError, OSError) as exc:
+        return False, str(exc)
+
+
+def _render_certs_page(error=None, message=None):
+    apache_cert_path = os.path.join(APACHE_CERT_MOUNT, "cert.pem")
+    apache_key_path = os.path.join(APACHE_CERT_MOUNT, "private.key")
+    apache = _cert_info(apache_cert_path) if os.path.isfile(apache_cert_path) else None
+    return render_template(
+        "certs.html",
+        current=_cert_info(os.path.join(CERT_DIR, "cert.pem")),
+        apache=apache,
+        apache_key_encrypted=_key_is_encrypted(apache_key_path) if apache else False,
+        certs_dir_available=os.path.isdir(CERT_DIR),
+        csrf_token=_csrf_token(),
+        error=error,
+        message=message,
+    )
+
+
+@app.route("/admin/certs", methods=["GET"])
+def certs_route():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_route"))
+    return _render_certs_page()
+
+
+@app.route("/admin/certs/apply", methods=["POST"])
+def certs_apply_route():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_route"))
+    if not _check_csrf():
+        return _render_certs_page(error="Session expired -- please try again.")
+    if not os.path.isdir(CERT_DIR):
+        return _render_certs_page(error="No writable certificate directory on this deployment.")
+
+    source = request.form.get("source")
+    password = request.form.get("password", "")
+    tmp_cert = os.path.join(CERT_DIR, "cert.pem.new")
+    tmp_key = os.path.join(CERT_DIR, "private.key.new")
+
+    try:
+        if source == "apache":
+            src_cert = os.path.join(APACHE_CERT_MOUNT, "cert.pem")
+            src_key = os.path.join(APACHE_CERT_MOUNT, "private.key")
+            if not os.path.isfile(src_cert) or not os.path.isfile(src_key):
+                raise ValueError("This EM's Apache cert/key could not be found.")
+            shutil.copyfile(src_cert, tmp_cert)
+            shutil.copyfile(src_key, tmp_key)
+        elif source == "upload":
+            cert_file = request.files.get("cert_file")
+            key_file = request.files.get("key_file")
+            if not cert_file or not key_file or not cert_file.filename or not key_file.filename:
+                raise ValueError("Both a certificate file and a private key file are required.")
+            cert_file.save(tmp_cert)
+            key_file.save(tmp_key)
+        else:
+            raise ValueError("Unknown certificate source.")
+
+        ok, err = _verify_cert_key(tmp_cert, tmp_key, password)
+        if not ok:
+            raise ValueError(f"That cert/key could not be loaded: {err}")
+
+        os.replace(tmp_cert, os.path.join(CERT_DIR, "cert.pem"))
+        os.replace(tmp_key, os.path.join(CERT_DIR, "private.key"))
+        os.chmod(os.path.join(CERT_DIR, "private.key"), 0o600)
+        pw_path = os.path.join(CERT_DIR, "key_password.txt")
+        if password:
+            with open(pw_path, "w") as f:
+                f.write(password)
+            os.chmod(pw_path, 0o600)
+        elif os.path.isfile(pw_path):
+            os.remove(pw_path)
+    except ValueError as exc:
+        for p in (tmp_cert, tmp_key):
+            if os.path.isfile(p):
+                os.remove(p)
+        return _render_certs_page(error=str(exc))
+
+    _log_activity("cert_updated", username=session.get("username"), source=source)
+    # Werkzeug's dev server can't hot-swap a TLS cert mid-process -- the
+    # container's --restart unless-stopped policy (Deploy.sh) is what
+    # actually applies this, by bringing the process back up with the
+    # new file already in place.
+    threading.Timer(1.0, lambda: os._exit(0)).start()
+    return _render_certs_page(
+        message="New certificate saved. Restarting the service now to apply it -- this page will be unreachable for a few seconds."
+    )
+
+
+@app.route("/admin/certs/export-apache", methods=["GET"])
+def certs_export_apache_route():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_route"))
+    src_cert = os.path.join(APACHE_CERT_MOUNT, "cert.pem")
+    src_key = os.path.join(APACHE_CERT_MOUNT, "private.key")
+    if not os.path.isfile(src_cert) or not os.path.isfile(src_key):
+        return redirect(url_for("certs_route"))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.write(src_cert, "cert.pem")
+        zf.write(src_key, "private.key")
+    buf.seek(0)
+    _log_activity("cert_exported", username=session.get("username"))
+    return send_file(buf, mimetype="application/zip", as_attachment=True, download_name="apache-cert.zip")
 
 
 # ---------------------------------------------------------------------

@@ -18,6 +18,8 @@
             <h1 style="margin:0;">DNAC to Eyesight Switch Sync</h1>
             <div class="hint">
                 v{{ version }} &middot; deployed {{ deployed_at }}
+                &middot; <a href="{{ url_for('certs_route') }}">Certificates</a>
+                &middot; <a href="{{ url_for('change_password_route') }}">Change password</a>
                 &middot; <form method="post" action="/logout" style="display:inline;"><button type="submit" class="btn-small btn-secondary">Logout</button></form>
             </div>
         </div>

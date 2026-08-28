@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>DNAC to Eyesight Switch Sync -- Certificates</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='forescout-brand.css') }}">
+</head>
+<body>
+    <div class="forescout-header">
+        <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
+        <div class="forescout-header-title">
+            DNAC to Eyesight Switch Sync
+        </div>
+    </div>
+    <main style="max-width:40em; margin:2rem auto;">
+        <h1>HTTPS Certificate</h1>
+        <p class="subtitle"><a href="{{ url_for('index') }}">&laquo; Back to the app</a></p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        {% if message %}
+        <div class="hint" style="border:1px solid var(--accent, #4a9); padding:0.6rem; border-radius:4px;">{{ message }}</div>
+        {% endif %}
+
+        <div class="card">
+            <h2 style="margin-top:0;">Currently in use</h2>
+            {% if not certs_dir_available %}
+            <p class="hint">This deployment doesn't serve HTTPS (no /certs volume mounted) -- nothing to manage here.</p>
+            {% elif current %}
+                {% if current.error %}
+                <p class="hint">Could not read the current certificate: {{ current.error }}</p>
+                {% else %}
+                <p><strong>Subject:</strong> {{ current.subject }}</p>
+                <p><strong>Issuer:</strong> {{ current.issuer }}</p>
+                <p><strong>Expires:</strong> {{ current.expires }}</p>
+                <p class="hint">SHA-256: {{ current.fingerprint }}</p>
+                {% endif %}
+            {% else %}
+            <p class="hint">No certificate installed yet.</p>
+            {% endif %}
+        </div>
+
+        {% if certs_dir_available %}
+        <div class="card">
+            <h2 style="margin-top:0;">Use this EM's own Apache certificate</h2>
+            {% if apache %}
+                {% if apache.error %}
+                <p class="hint">Could not read this EM's Apache cert: {{ apache.error }}</p>
+                {% else %}
+                <p><strong>Subject:</strong> {{ apache.subject }}</p>
+                <p><strong>Issuer:</strong> {{ apache.issuer }}</p>
+                <p><strong>Expires:</strong> {{ apache.expires }}</p>
+                <p class="hint">SHA-256: {{ apache.fingerprint }}</p>
+                <form method="post" action="{{ url_for('certs_apply_route') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="source" value="apache">
+                    {% if apache_key_encrypted %}
+                    <label style="margin-bottom:0.75rem;"><span class="field-label">This key is passphrase-protected -- enter it</span>
+                        <input type="password" name="password" autocomplete="off" required>
+                    </label>
+                    {% endif %}
+                    <button type="submit">Use this certificate</button>
+                </form>
+                <p class="hint" style="margin-top:0.75rem;">
+                    <a href="{{ url_for('certs_export_apache_route') }}">Download this cert + key as a .zip</a>
+                    (e.g. to load into eyeSight)
+                </p>
+                {% endif %}
+            {% else %}
+            <p class="hint">No Apache cert mount found on this deployment.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2 style="margin-top:0;">Upload a certificate</h2>
+            <form method="post" action="{{ url_for('certs_apply_route') }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="source" value="upload">
+                <label style="margin-bottom:0.75rem;"><span class="field-label">Certificate (PEM, leaf or full chain)</span>
+                    <input type="file" name="cert_file" accept=".pem,.crt,.cer" required>
+                </label>
+                <label style="margin-bottom:0.75rem;"><span class="field-label">Private key (PEM)</span>
+                    <input type="file" name="key_file" accept=".pem,.key" required>
+                </label>
+                <label style="margin-bottom:1rem;"><span class="field-label">Passphrase (leave blank if the key isn't encrypted)</span>
+                    <input type="password" name="password" autocomplete="off">
+                </label>
+                <button type="submit">Upload and use this certificate</button>
+            </form>
+        </div>
+        <p class="hint">Applying a certificate restarts the service to load it -- the app will be unreachable for a few seconds.</p>
+        {% endif %}
+    </main>
+</body>
+</html>

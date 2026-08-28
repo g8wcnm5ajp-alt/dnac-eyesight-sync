@@ -146,6 +146,7 @@ docker run -d \
     -p "${HTTPS_PORT}:5000" \
     -v "${CERT_DIR}:/certs" \
     -v "${DATA_DIR}:/data" \
+    -v "$(dirname "$APACHE_CERT"):/host-apache-certs:ro" \
     -e DNAC_EYESIGHT_SSL_CERT=/certs/cert.pem \
     -e DNAC_EYESIGHT_SSL_KEY=/certs/private.key \
     -e DNAC_EYESIGHT_SSL_KEY_PASSWORD_FILE=/certs/key_password.txt \
