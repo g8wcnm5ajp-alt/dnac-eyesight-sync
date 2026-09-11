@@ -150,6 +150,8 @@ def login_route():
 
 @app.route("/logout", methods=["POST"])
 def logout_route():
+    if not _check_csrf():
+        return redirect(url_for("login_route"))
     _log_activity("logout", username=session.get("username"))
     session.clear()
     return redirect(url_for("login_route"))
@@ -361,6 +363,7 @@ def index():
     return render_template(
         "index.html", config=load_config(), history=_with_display_time(get_history()[:50]),
         version=APP_VERSION, deployed_at=DEPLOYED_AT.strftime("%Y-%m-%d %H:%M UTC"),
+        csrf_token=_csrf_token(),
     )
 
 
@@ -374,8 +377,12 @@ def api_config_save():
     """Whole-section replace, one section per call (dnac / eyesight / switch_managers /
     switch_profiles / proxy / general / schedule) -- the Config tab's three panels and
     the Automate Switch Sync tab each save their own section independently."""
-    section = request.json.get("section") if request.is_json else None
-    values = request.json.get("values") if request.is_json else None
+    payload = request.get_json(silent=True) or {}
+    token = payload.pop("csrf_token", "")
+    if not (token and secrets.compare_digest(token, session.get("csrf_token", ""))):
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
+    section = payload.get("section")
+    values = payload.get("values")
     if not section or values is None:
         return jsonify({"error": "Missing section/values."}), 400
     cfg = load_config()
@@ -431,6 +438,8 @@ def api_test_eyesight():
 
 @app.route("/api/sync/run", methods=["POST"])
 def api_sync_run():
+    if not _check_csrf():
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
     dry_run = request.form.get("dry_run") == "1"
     entry = run_sync(triggered_by="manual", dry_run=dry_run)
     _log_activity("sync_run", triggered_by="manual", dry_run=dry_run, success=entry["success"])
@@ -463,6 +472,8 @@ def api_manual_switches():
 
 @app.route("/api/manual/add", methods=["POST"])
 def api_manual_add():
+    if not _check_csrf():
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
     ip = request.form.get("ip", "").strip()
     profile = request.form.get("profile", "").strip()
     manager = request.form.get("manager", "").strip()
@@ -477,6 +488,8 @@ def api_manual_add():
 
 @app.route("/api/manual/remove", methods=["POST"])
 def api_manual_remove():
+    if not _check_csrf():
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
     ip = request.form.get("ip", "").strip()
     if not ip:
         return jsonify({"error": "IP is required."}), 400
@@ -524,6 +537,8 @@ def api_manual_get_switch():
 
 @app.route("/api/manual/update", methods=["POST"])
 def api_manual_update():
+    if not _check_csrf():
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
     ip = request.form.get("ip", "").strip()
     profile = request.form.get("profile", "").strip()
     manager = request.form.get("manager", "").strip()
@@ -554,6 +569,8 @@ def api_manual_get_switch_credentials():
 
 @app.route("/api/manual/switch_credentials", methods=["POST"])
 def api_manual_update_switch_credentials():
+    if not _check_csrf():
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
     ip = request.form.get("ip", "").strip()
     if not ip:
         return jsonify({"error": "IP is required."}), 400
@@ -580,6 +597,8 @@ def api_manual_get_profile_credentials():
 
 @app.route("/api/manual/profile_credentials", methods=["POST"])
 def api_manual_update_profile_credentials():
+    if not _check_csrf():
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
     profile = request.form.get("profile", "").strip()
     if not profile:
         return jsonify({"error": "Profile name is required."}), 400

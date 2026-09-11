@@ -32,6 +32,9 @@ from datetime import datetime, timezone
 from dnac_client import DnacClient, DnacClientError
 from eyesight_client import EyesightClient, EyesightClientError
 
+DELETE_READD_DELAY_SECONDS = 8  # 5-10s per David: the Switch Plugin REST API needs a beat
+# between a delete and a re-add of the same switch before it will accept it again.
+
 DATA_DIR = os.environ.get("DNAC_EYESIGHT_DATA_DIR", "/data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
@@ -287,6 +290,13 @@ def run_sync(triggered_by="manual", dry_run=False):
             if to_delete:
                 log(f"Deleting {len(to_delete)} switch(es) from Eyesight...")
                 eyesight.delete_switches(to_delete)
+            if to_delete and to_add:
+                # Delete mode re-adds switches it just deleted (same managementAddress) --
+                # the Switch Plugin REST API needs a few seconds to actually finish removing
+                # a switch internally before it will accept that same IP again. Confirmed
+                # necessary by David, 2026-09-11.
+                log(f"Waiting {DELETE_READD_DELAY_SECONDS}s for Eyesight to finish processing the delete before adding...")
+                time.sleep(DELETE_READD_DELAY_SECONDS)
             if to_add:
                 log(f"Adding {len(to_add)} switch(es) to Eyesight...")
                 eyesight.add_switches(to_add)

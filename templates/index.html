@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='forescout-brand.css') }}">
 </head>
 <body>
+    <script>const CSRF_TOKEN = {{ csrf_token|tojson }};</script>
     <div class="forescout-header">
         <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
         <div class="forescout-header-title">
@@ -20,7 +21,7 @@
                 v{{ version }} &middot; deployed {{ deployed_at }}
                 &middot; <a href="{{ url_for('certs_route') }}">Certificates</a>
                 &middot; <a href="{{ url_for('change_password_route') }}">Change password</a>
-                &middot; <form method="post" action="/logout" style="display:inline;"><button type="submit" class="btn-small btn-secondary">Logout</button></form>
+                &middot; <form method="post" action="/logout" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn-small btn-secondary">Logout</button></form>
             </div>
         </div>
         <p class="subtitle">Pulls the switch inventory from Cisco DNAC and reconciles it into Forescout Eyesight.</p>
@@ -299,7 +300,7 @@
                 return fetch("/api/config", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ section: section, values: values }),
+                    body: JSON.stringify({ section: section, values: values, csrf_token: CSRF_TOKEN }),
                 }).then(r => r.json()).then(d => {
                     if (d.error) { statusEl.textContent = "error: " + d.error; return false; }
                     statusEl.textContent = "saved.";
@@ -403,6 +404,7 @@
                 btn.disabled = true;
                 resultEl.innerHTML = '<p class="hint"><span class="spinner"></span> Running...</p>';
                 const fd = new FormData();
+                fd.set("csrf_token", CSRF_TOKEN);
                 if (dryRun) fd.set("dry_run", "1");
                 fetch("/api/sync/run", { method: "POST", body: fd })
                     .then(r => r.json())
@@ -445,6 +447,7 @@
                             b.addEventListener("click", () => {
                                 if (!window.confirm("Remove " + b.dataset.ip + " from Eyesight?")) return;
                                 const fd = new FormData();
+                                fd.set("csrf_token", CSRF_TOKEN);
                                 fd.set("ip", b.dataset.ip);
                                 fetch("/api/manual/remove", { method: "POST", body: fd })
                                     .then(r => r.json())
@@ -472,6 +475,7 @@
                 e.preventDefault();
                 const resultEl = document.getElementById("manual-add-result");
                 const fd = new FormData(manualAddForm);
+                fd.set("csrf_token", CSRF_TOKEN);
                 fetch("/api/manual/add", { method: "POST", body: fd })
                     .then(r => r.json())
                     .then(d => {
@@ -526,6 +530,7 @@
                 e.preventDefault();
                 const resultEl = document.getElementById("manual-update-result");
                 const fd = new FormData(manualUpdateForm);
+                fd.set("csrf_token", CSRF_TOKEN);
                 fetch("/api/manual/update", { method: "POST", body: fd })
                     .then(r => r.json())
                     .then(d => {
@@ -588,6 +593,7 @@
                 e.preventDefault();
                 const resultEl = document.getElementById("manual-updateswitchcred-result");
                 const fd = new FormData(manualUpdateSwitchCredForm);
+                fd.set("csrf_token", CSRF_TOKEN);
                 fetch("/api/manual/switch_credentials", { method: "POST", body: fd })
                     .then(r => r.json())
                     .then(d => {
@@ -618,6 +624,7 @@
                 e.preventDefault();
                 const resultEl = document.getElementById("manual-updateprofilecred-result");
                 const fd = new FormData(manualUpdateProfileCredForm);
+                fd.set("csrf_token", CSRF_TOKEN);
                 fetch("/api/manual/profile_credentials", { method: "POST", body: fd })
                     .then(r => r.json())
                     .then(d => {

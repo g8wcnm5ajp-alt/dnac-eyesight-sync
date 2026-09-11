@@ -27,6 +27,9 @@ CONTAINER_NAME="dnac-eyesight-sync"
 NETWORK_NAME="DnacEyesightBridge"
 HTTPS_PORT=8445
 FW_HOOK_NAME="DnacEyesightSyncHelper"
+# Source CIDR allowed to reach the app's HTTPS port. Override by exporting
+# ADMIN_CIDR before running this script if the management LAN differs.
+ADMIN_CIDR="${ADMIN_CIDR:-192.168.22.0/24}"
 
 CERT_DIR="${DIR}/certs"
 DATA_DIR="${DIR}/data"
@@ -156,8 +159,9 @@ echo "Container $CONTAINER_NAME started"
 
 echo
 echo "=== 4. Opening the firewall port (fstool fw addhook) ==="
+echo "Restricting access to ${ADMIN_CIDR} (override with ADMIN_CIDR=... ./Deploy.sh)"
 fstool fw delhook "$FW_HOOK_NAME" >/dev/null 2>&1 || true
-fstool fw addhook "$FW_HOOK_NAME" "iptables -I INPUT -s 0.0.0.0/0 -m tcp -p tcp --dport ${HTTPS_PORT} -j ACCEPT"
+fstool fw addhook "$FW_HOOK_NAME" "iptables -I INPUT -s ${ADMIN_CIDR} -m tcp -p tcp --dport ${HTTPS_PORT} -j ACCEPT"
 if iptables -L INPUT -n | grep -q "dpt:${HTTPS_PORT}"; then
     echo "Firewall rule for port $HTTPS_PORT confirmed active"
 else
