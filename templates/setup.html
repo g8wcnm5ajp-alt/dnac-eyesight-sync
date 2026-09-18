@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>DNAC to Eyesight Switch Sync -- Setup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='forescout-brand.css') }}">
+</head>
+<body>
+    <div class="forescout-header">
+        <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
+        <div class="forescout-header-title">
+            DNAC to Eyesight Switch Sync
+        </div>
+    </div>
+    <main style="max-width:40em; margin:2rem auto;">
+        <h1>Setup</h1>
+        <p class="subtitle"><a href="{{ url_for('index') }}">&laquo; Back to the app</a> &middot; <a href="{{ url_for('certs_route') }}">Certificates</a></p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        {% if message %}
+        <div class="hint" style="border:1px solid var(--accent, #4a9); padding:0.6rem; border-radius:4px;">{{ message }}</div>
+        {% endif %}
+
+        <div class="card">
+            <h2 style="margin-top:0;">Allowed access (ADMIN_CIDR)</h2>
+            <p class="hint">The source network allowed to reach this app's HTTPS port. Deploy.sh opens it to any source
+                (0.0.0.0/0); changing it here takes effect immediately -- it re-applies the same firewall rule on the EM,
+                no redeploy needed.</p>
+            <p><strong>Currently:</strong> {{ admin_cidr or "unknown (not set through this page or a Deploy.sh run since it last changed)" }}</p>
+            <form method="post" action="{{ url_for('setup_admin_cidr_route') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label style="display:block; margin-bottom:0.75rem;">New CIDR (e.g. 192.168.1.0/24, or 0.0.0.0/0 for any source)
+                    <input type="text" name="admin_cidr" value="{{ admin_cidr or '' }}" required
+                           pattern="^(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}$"
+                           placeholder="192.168.1.0/24" style="width:100%; margin-top:0.3rem;">
+                </label>
+                <button type="submit">Apply</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

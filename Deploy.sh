@@ -4,19 +4,21 @@
 # on THIS Enterprise Manager. Run this ON the EM, as root, from inside
 # the unpacked DnacEyesightSync directory.
 #
-# Simpler than the sibling Tech Support Collector's Deploy.sh -- this
-# app never SSHes anywhere; it only makes outbound HTTPS calls (DNAC's
-# REST API, and Eyesight's own CounterACT REST API on this EM), so
-# there's no restricted-key/webapp-query.py step to install.
-#
 # What this does, in order (idempotent -- safe to re-run to pick up a
-# renewed cert or a newer image):
-#   1. Uses a cert.pem + private.key already dropped into certs/ by
-#      hand, or falls back to copying this EM's own Apache SSL cert.
-#   2. Creates the DnacEyesightBridge docker network.
-#   3. Loads and runs the bundled image -- auto-restarts on reboot.
-#   4. Opens the app's port through this EM's own firewall via
-#      fstool's own addhook mechanism.
+# newer image; certs/, data/ and keys/ from a previous run are kept):
+#   1. Installs fw-helper.sh (the one command the container may run on
+#      this EM: read/change the firewall rule for the app's own port)
+#      and registers the app's keypair in root's authorized_keys
+#      restricted to ONLY that helper -- so the app's Setup page can
+#      narrow access later without a redeploy.
+#   2. Generates a self-signed HTTPS cert (non-interactive). Replace it
+#      later via the app's own Certificates page if you want a real one.
+#   3. Creates the DnacEyesightBridge docker network.
+#   4. Loads and runs the bundled image -- auto-restarts on reboot.
+#   5. Opens the app's port through this EM's own firewall via
+#      fstool's own addhook mechanism -- open to any source by default
+#      (0.0.0.0/0); narrow it on the app's Setup page, or with
+#      ADMIN_CIDR=<cidr> ./Deploy.sh.
 #
 # Usage: sudo ./Deploy.sh
 set -euo pipefail
@@ -27,14 +29,21 @@ CONTAINER_NAME="dnac-eyesight-sync"
 NETWORK_NAME="DnacEyesightBridge"
 HTTPS_PORT=8445
 FW_HOOK_NAME="DnacEyesightSyncHelper"
-# Source CIDR allowed to reach the app's HTTPS port. Override by exporting
-# ADMIN_CIDR before running this script if the management LAN differs.
-ADMIN_CIDR="${ADMIN_CIDR:-192.168.22.0/24}"
+# Source CIDR allowed to reach the app's HTTPS port. Open by default
+# (David, 2026-09-18); the app's Setup page changes it live afterwards.
+ADMIN_CIDR="${ADMIN_CIDR:-0.0.0.0/0}"
+
+KEY_DIR="${DIR}/keys"
+KEY_FILE="${KEY_DIR}/fw_helper_rsa"
+KEY_COMMENT="dnac-eyesight-sync-em"
+AUTHORIZED_KEYS="/root/.ssh/authorized_keys"
+HELPER_DIR="/root/scripts/dnac-eyesight-sync"
+HELPER="${HELPER_DIR}/fw-helper.sh"
+BUNDLED_HELPER="${DIR}/fw-helper.sh"
 
 CERT_DIR="${DIR}/certs"
 DATA_DIR="${DIR}/data"
 APACHE_CERT="/usr/local/forescout/etc/net_portal_ssl/cert.pem"
-APACHE_KEY="/usr/local/forescout/etc/net_portal_ssl/private.key"
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Must be run as root." >&2
@@ -51,79 +60,66 @@ if [ ! -f "${DIR}/image.tar" ]; then
     exit 1
 fi
 
-echo "=== 1. HTTPS certificate ==="
-mkdir -p "$CERT_DIR"
-KEY_PASSWORD_FILE="${CERT_DIR}/key_password.txt"
-
-if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/private.key" ]; then
-    echo "Using cert/key already in $CERT_DIR from a previous run -- not touching them"
-    echo "(delete $CERT_DIR/cert.pem and $CERT_DIR/private.key first if you want to supply new ones)"
-else
-    echo "No cert/key found in $CERT_DIR yet."
-    echo
-    echo "  1) I have a cert + key to use (e.g. one issued by our own internal CA)"
-    echo "  2) Use this EM's own Apache web cert (${APACHE_CERT})"
-    echo "  3) Generate a self-signed cert (browsers will show a one-time trust warning)"
-    echo
-    read -r -p "Choice [1/2/3]: " CERT_CHOICE
-
-    case "$CERT_CHOICE" in
-        1)
-            read -r -p "Path to the certificate (PEM, leaf or full chain): " USER_CERT_PATH
-            read -r -p "Path to the private key (PEM): " USER_KEY_PATH
-            if [ ! -f "$USER_CERT_PATH" ] || [ ! -f "$USER_KEY_PATH" ]; then
-                echo "Error: could not find one or both of those files." >&2
-                exit 1
-            fi
-            cp "$USER_CERT_PATH" "$CERT_DIR/cert.pem"
-            cp "$USER_KEY_PATH" "$CERT_DIR/private.key"
-            chmod 600 "$CERT_DIR/private.key"
-            echo "Installed the supplied cert/key into $CERT_DIR"
-            ;;
-        2)
-            if [ ! -f "$APACHE_CERT" ] || [ ! -f "$APACHE_KEY" ]; then
-                echo "Error: $APACHE_CERT / $APACHE_KEY not found -- this isn't a real EM, or the cert has moved." >&2
-                exit 1
-            fi
-            cp "$APACHE_CERT" "$CERT_DIR/cert.pem"
-            cp "$APACHE_KEY" "$CERT_DIR/private.key"
-            chmod 600 "$CERT_DIR/private.key"
-            echo "Copied this EM's own Apache web cert into $CERT_DIR"
-            ;;
-        3)
-            EM_IP_FOR_CERT="$(hostname -I 2>/dev/null | awk '{print $1}')"
-            EM_FQDN="$(hostname -f 2>/dev/null || hostname)"
-            openssl req -x509 -newkey rsa:4096 -nodes \
-                -keyout "$CERT_DIR/private.key" -out "$CERT_DIR/cert.pem" \
-                -days 825 -subj "/CN=${EM_FQDN}" \
-                -addext "subjectAltName=DNS:${EM_FQDN},IP:${EM_IP_FOR_CERT:-127.0.0.1}" \
-                >/dev/null 2>&1
-            chmod 600 "$CERT_DIR/private.key"
-            echo "Generated a self-signed cert for ${EM_FQDN} in $CERT_DIR"
-            echo "(browsers will show a one-time trust warning for this cert -- expected)"
-            ;;
-        *)
-            echo "Error: invalid choice." >&2
-            exit 1
-            ;;
-    esac
-
-    if grep -q "ENCRYPTED" "$CERT_DIR/private.key" 2>/dev/null; then
-        read -r -s -p "That key is passphrase-protected -- enter its passphrase: " KEY_PASS
-        echo
-        printf "%s" "$KEY_PASS" > "$KEY_PASSWORD_FILE"
-        chmod 600 "$KEY_PASSWORD_FILE"
-    fi
+if [ ! -f "$BUNDLED_HELPER" ]; then
+    echo "Error: ${BUNDLED_HELPER} not found -- the package is incomplete." >&2
+    exit 1
 fi
 
-if grep -q "ENCRYPTED" "$CERT_DIR/private.key" 2>/dev/null && [ ! -f "$KEY_PASSWORD_FILE" ]; then
-    echo "WARNING: $CERT_DIR/private.key looks passphrase-protected but $KEY_PASSWORD_FILE is missing." >&2
-    echo "The app will fail to start until you create it:" >&2
-    echo "    echo -n 'the-passphrase' > $KEY_PASSWORD_FILE && chmod 600 $KEY_PASSWORD_FILE" >&2
+echo "=== 1. Firewall helper + restricted key ==="
+mkdir -p "$HELPER_DIR"
+cp "$BUNDLED_HELPER" "$HELPER"
+chmod 755 "$HELPER"
+echo "Installed fw-helper.sh at $HELPER"
+
+mkdir -p "$KEY_DIR"
+if [ ! -f "$KEY_FILE" ]; then
+    ssh-keygen -t rsa -b 4096 -f "$KEY_FILE" -N "" -C "$KEY_COMMENT" -q
+    echo "Generated new keypair at $KEY_FILE"
+else
+    echo "Keypair already exists at $KEY_FILE -- not regenerating"
+fi
+chmod 600 "$KEY_FILE"
+chmod 644 "${KEY_FILE}.pub"
+
+mkdir -p "$(dirname "$AUTHORIZED_KEYS")"
+touch "$AUTHORIZED_KEYS"
+PUBKEY_CONTENT="$(cat "${KEY_FILE}.pub")"
+DESIRED_LINE="command=\"${HELPER}\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ${PUBKEY_CONTENT}"
+if grep -qF "$DESIRED_LINE" "$AUTHORIZED_KEYS" 2>/dev/null; then
+    echo "Key already registered in $AUTHORIZED_KEYS -- skipped"
+else
+    # Compare the key CONTENT, not just the comment (a comment-only check
+    # once left a stale entry behind across a keypair regeneration in the
+    # sibling app, 2026-09-14). Drop any earlier entry for this app first.
+    grep -v "$KEY_COMMENT" "$AUTHORIZED_KEYS" > "${AUTHORIZED_KEYS}.tmp" 2>/dev/null || true
+    mv "${AUTHORIZED_KEYS}.tmp" "$AUTHORIZED_KEYS"
+    echo "$DESIRED_LINE" >> "$AUTHORIZED_KEYS"
+    chmod 600 "$AUTHORIZED_KEYS"
+    echo "Registered restricted key in $AUTHORIZED_KEYS (replaced any stale entry)"
 fi
 
 echo
-echo "=== 2. Docker network ==="
+echo "=== 2. HTTPS certificate ==="
+mkdir -p "$CERT_DIR"
+if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/private.key" ]; then
+    echo "Using cert/key already in $CERT_DIR from a previous run -- not touching them"
+    echo "(replace them via the app's own Certificates page, or delete both files and re-run for a fresh self-signed one)"
+else
+    echo "No cert/key found in $CERT_DIR yet -- generating a self-signed one."
+    echo "(browsers will show a one-time trust warning; replace it later via the app's own Certificates page)"
+    EM_IP_FOR_CERT="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    EM_FQDN="$(hostname -f 2>/dev/null || hostname)"
+    openssl req -x509 -newkey rsa:4096 -nodes \
+        -keyout "$CERT_DIR/private.key" -out "$CERT_DIR/cert.pem" \
+        -days 825 -subj "/CN=${EM_FQDN}" \
+        -addext "subjectAltName=DNS:${EM_FQDN},IP:${EM_IP_FOR_CERT:-127.0.0.1}" \
+        >/dev/null 2>&1
+    chmod 600 "$CERT_DIR/private.key"
+    echo "Generated a self-signed cert for ${EM_FQDN} in $CERT_DIR"
+fi
+
+echo
+echo "=== 3. Docker network ==="
 if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
     docker network create "$NETWORK_NAME" >/dev/null
     echo "Created docker network $NETWORK_NAME"
@@ -131,8 +127,18 @@ else
     echo "Docker network $NETWORK_NAME already exists -- skipped"
 fi
 
+# Docker's "host-gateway" magic value for --add-host is unreliable on
+# some bridge-network setups (resolves to <nil> in /etc/hosts). Passing
+# the network's real gateway IP is what works every time (sibling app).
+BRIDGE_GATEWAY="$(docker network inspect "$NETWORK_NAME" --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')"
+if [ -z "$BRIDGE_GATEWAY" ]; then
+    echo "Error: could not determine ${NETWORK_NAME}'s gateway IP." >&2
+    exit 1
+fi
+echo "Container will reach this EM via host.docker.internal -> ${BRIDGE_GATEWAY}"
+
 echo
-echo "=== 3. Loading and starting the container ==="
+echo "=== 4. Loading and starting the container ==="
 docker load -i "${DIR}/image.tar"
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
@@ -142,14 +148,19 @@ fi
 
 mkdir -p "$DATA_DIR"
 
+# /host-apache-certs stays mounted read-only so the app's Certificates
+# page can still offer this EM's own Apache cert as a one-click option.
 docker run -d \
     --name "$CONTAINER_NAME" \
     --network "$NETWORK_NAME" \
     --restart unless-stopped \
+    --add-host="host.docker.internal:${BRIDGE_GATEWAY}" \
     -p "${HTTPS_PORT}:5000" \
+    -v "${KEY_DIR}:/keys:ro" \
     -v "${CERT_DIR}:/certs" \
     -v "${DATA_DIR}:/data" \
     -v "$(dirname "$APACHE_CERT"):/host-apache-certs:ro" \
+    -e DNAC_EYESIGHT_EM_HOST=host.docker.internal \
     -e DNAC_EYESIGHT_SSL_CERT=/certs/cert.pem \
     -e DNAC_EYESIGHT_SSL_KEY=/certs/private.key \
     -e DNAC_EYESIGHT_SSL_KEY_PASSWORD_FILE=/certs/key_password.txt \
@@ -158,8 +169,12 @@ docker run -d \
 echo "Container $CONTAINER_NAME started"
 
 echo
-echo "=== 4. Opening the firewall port (fstool fw addhook) ==="
-echo "Restricting access to ${ADMIN_CIDR} (override with ADMIN_CIDR=... ./Deploy.sh)"
+echo "=== 5. Opening the firewall port (fstool fw addhook) ==="
+if [ "$ADMIN_CIDR" = "0.0.0.0/0" ]; then
+    echo "Port ${HTTPS_PORT} open to any source -- narrow it on the app's Setup page, or with ADMIN_CIDR=<cidr> ./Deploy.sh"
+else
+    echo "Restricting access to ${ADMIN_CIDR}"
+fi
 fstool fw delhook "$FW_HOOK_NAME" >/dev/null 2>&1 || true
 fstool fw addhook "$FW_HOOK_NAME" "iptables -I INPUT -s ${ADMIN_CIDR} -m tcp -p tcp --dport ${HTTPS_PORT} -j ACCEPT"
 if iptables -L INPUT -n | grep -q "dpt:${HTTPS_PORT}"; then
@@ -167,6 +182,8 @@ if iptables -L INPUT -n | grep -q "dpt:${HTTPS_PORT}"; then
 else
     echo "WARNING: could not confirm the firewall rule via iptables -- check by hand." >&2
 fi
+# What the Setup page reads back; fw-helper.sh keeps it current after that.
+echo "${ADMIN_CIDR}" > "${HELPER_DIR}/admin_cidr.state"
 
 EM_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 cat <<EOF
@@ -179,7 +196,9 @@ Default login: admin / DnacEyesightSync123
 (you will be forced to change this on first sign-in)
 
 Then fill in the Config tab (DNAC + Eyesight credentials, switch
-managers/profiles) before running or scheduling a sync.
+managers/profiles) before running or scheduling a sync. Setup (top
+right) narrows which network may reach this page; Certificates
+replaces the self-signed cert.
 
 To uninstall later: sudo ./Remove.sh
 EOF

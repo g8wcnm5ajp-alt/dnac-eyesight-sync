@@ -27,6 +27,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from dnac_client import DnacClient, DnacClientError
 from eyesight_client import EyesightClient, EyesightClientError
+from fw_client import FwClientError, get_admin_cidr, set_admin_cidr, valid_cidr
 from scheduler import start_scheduler
 from sync_engine import (
     DATA_DIR, SyncEngineError, get_history, get_log_text, load_config, manual_add_switch,
@@ -37,7 +38,7 @@ from sync_engine import (
 
 app = Flask(__name__)
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 DEPLOYED_AT = datetime.now(timezone.utc)
 
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -327,6 +328,53 @@ def certs_apply_route():
     return _render_certs_page(
         message="New certificate saved. Restarting the service now to apply it -- this page will be unreachable for a few seconds."
     )
+
+
+# ---------------------------------------------------------------------
+# Setup -- the firewall rule for this app's own port. Deploy.sh opens it
+# to any source (David, 2026-09-18: "remove the firewall limitation, set
+# 0.0.0.0/0 as default and set a menu item to configure it if needed");
+# this page narrows it live through the EM-side fw-helper.sh, the one
+# command the container's restricted key may run. Same page as the
+# sibling Tech Support Collector's Setup.
+# ---------------------------------------------------------------------
+def _render_setup_page(error=None, message=None):
+    try:
+        admin_cidr = get_admin_cidr().get("admin_cidr")
+    except FwClientError as exc:
+        admin_cidr = None
+        error = error or f"Could not read the current setting from the EM: {exc}"
+    return render_template(
+        "setup.html", admin_cidr=admin_cidr, csrf_token=_csrf_token(), error=error, message=message,
+    )
+
+
+@app.route("/admin/setup", methods=["GET"])
+def setup_route():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_route"))
+    return _render_setup_page()
+
+
+@app.route("/admin/setup/admin_cidr", methods=["POST"])
+def setup_admin_cidr_route():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_route"))
+    if not _check_csrf():
+        return _render_setup_page(error="Session expired -- please try again.")
+    cidr = request.form.get("admin_cidr", "").strip()
+    if not valid_cidr(cidr):
+        return _render_setup_page(error=f"'{cidr}' is not a valid CIDR (expected e.g. 192.168.1.0/24 or 0.0.0.0/0).")
+    try:
+        result = set_admin_cidr(cidr)
+    except FwClientError as exc:
+        return _render_setup_page(error=f"Could not apply this on the EM: {exc}")
+    _log_activity("admin_cidr_changed", username=session.get("username"), admin_cidr=cidr)
+    if not result.get("firewall_confirmed"):
+        return _render_setup_page(
+            error=f"Set to {cidr}, but the firewall rule could not be confirmed via iptables on the EM -- check by hand."
+        )
+    return _render_setup_page(message=f"Access restricted to {cidr}. The firewall rule is confirmed active.")
 
 
 @app.route("/admin/certs/export-apache", methods=["GET"])

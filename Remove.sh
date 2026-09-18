@@ -4,7 +4,7 @@
 # this Enterprise Manager. Run this ON the EM, as root, from inside
 # the same directory Deploy.sh was run from.
 #
-# By default this leaves ./data and ./certs in place (so a later
+# By default this leaves ./data, ./certs and ./keys in place (so a later
 # re-Deploy.sh doesn't lose config/history/certs unnecessarily). Pass
 # --purge to also remove those.
 #
@@ -16,6 +16,9 @@ CONTAINER_NAME="dnac-eyesight-sync"
 NETWORK_NAME="DnacEyesightBridge"
 FW_HOOK_NAME="DnacEyesightSyncHelper"
 HTTPS_PORT=8445
+KEY_COMMENT="dnac-eyesight-sync-em"
+AUTHORIZED_KEYS="/root/.ssh/authorized_keys"
+HELPER_DIR="/root/scripts/dnac-eyesight-sync"
 
 PURGE=0
 if [ "${1:-}" = "--purge" ]; then
@@ -58,14 +61,30 @@ else
     echo "Docker network $NETWORK_NAME not found -- skipped"
 fi
 
+echo
+echo "=== 4. Removing the restricted key and firewall helper ==="
+if [ -f "$AUTHORIZED_KEYS" ] && grep -q "$KEY_COMMENT" "$AUTHORIZED_KEYS"; then
+    TMP="$(mktemp)"
+    grep -v "$KEY_COMMENT" "$AUTHORIZED_KEYS" > "$TMP" || true
+    mv "$TMP" "$AUTHORIZED_KEYS"
+    chmod 600 "$AUTHORIZED_KEYS"
+    echo "Removed the ${KEY_COMMENT} entry from $AUTHORIZED_KEYS"
+else
+    echo "No ${KEY_COMMENT} entry in $AUTHORIZED_KEYS -- skipped"
+fi
+if [ -d "$HELPER_DIR" ]; then
+    rm -rf "$HELPER_DIR"
+    echo "Removed $HELPER_DIR"
+fi
+
 if [ "$PURGE" -eq 1 ]; then
     echo
-    echo "=== 4. --purge: removing certs/ and data/ ==="
-    rm -rf "${DIR}/certs" "${DIR}/data"
-    echo "Removed ${DIR}/certs, ${DIR}/data"
+    echo "=== 5. --purge: removing certs/, data/ and keys/ ==="
+    rm -rf "${DIR}/certs" "${DIR}/data" "${DIR}/keys"
+    echo "Removed ${DIR}/certs, ${DIR}/data, ${DIR}/keys"
 else
     echo
-    echo "Leaving ${DIR}/certs and ${DIR}/data in place (pass --purge to remove those too)."
+    echo "Leaving ${DIR}/certs, ${DIR}/data and ${DIR}/keys in place (pass --purge to remove those too)."
 fi
 
 echo
