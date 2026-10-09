@@ -39,7 +39,7 @@ from sync_engine import (
 
 app = Flask(__name__)
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 DEPLOYED_AT = datetime.now(timezone.utc)
 
 os.makedirs(DATA_DIR, exist_ok=True)

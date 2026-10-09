@@ -721,7 +721,15 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ csrf_token: CSRF_TOKEN, description: descEl.value }),
                     })
-                        .then(r => r.json())
+                        .then(r => {
+                            // A lapsed session is redirected to the login page (HTML), not JSON. Detect that
+                            // and say so plainly, instead of letting JSON.parse choke on the leading "<".
+                            const ct = r.headers.get("content-type") || "";
+                            if (r.redirected || !ct.includes("application/json")) {
+                                throw new Error("Your session has expired — please refresh the page and log in again.");
+                            }
+                            return r.json();
+                        })
                         .then(d => {
                             genBtn.disabled = false;
                             if (!d.ok) { statusEl.textContent = "Error: " + (d.error || "could not generate the support log."); return; }
@@ -730,7 +738,10 @@
                             linkEl.setAttribute("download", d.filename || "dnac-eyesight-support-log.zip");
                             resultEl.style.display = "";
                         })
-                        .catch(err => { genBtn.disabled = false; statusEl.textContent = "Failed: " + err; });
+                        .catch(err => {
+                            genBtn.disabled = false;
+                            statusEl.textContent = (err && err.message) ? err.message : ("Failed: " + err);
+                        });
                 });
             })();
         })();
