@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import ssl
@@ -38,7 +39,7 @@ from sync_engine import (
 
 app = Flask(__name__)
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 DEPLOYED_AT = datetime.now(timezone.utc)
 
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -656,6 +657,148 @@ def api_manual_update_profile_credentials():
         return jsonify({"error": str(e)}), 400
     _log_activity("manual_update_profile_credentials", profile=profile)
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------
+# Support log -- David's ask, 2026-10-09: same one-click support bundle
+# the sibling Forescout Tech Support Collector offers. A "Support Log"
+# link in the header pops a box to describe the issue, then zips up this
+# app's own diagnostics for sending on. Deliberately collects only the
+# app's operational logs/state -- NEVER config.json / auth.json /
+# secret_key, which hold DNAC/Eyesight/SNMP credentials -- and every
+# included file is run through _redact_secrets() as belt-and-braces.
+# ---------------------------------------------------------------------
+SUPPORT_LOG_PATH = os.path.join(DATA_DIR, "support-log.zip")
+_LOG_DIR = os.path.join(DATA_DIR, "logs")
+
+# Mask "key: value" / "key=value" for secret-looking keys (quoted or not), so a
+# stray credential in any collected file can't leak. Belt-and-braces -- the real
+# defense is simply not collecting config.json/auth.json in the first place.
+_SECRET_LINE_RE = re.compile(
+    r'(?i)("?(?:password|passwd|secret|snmp_?community|community|auth_?password|'
+    r'privacy_?password|radius_?secret|token|api_?key)"?\s*[:=]\s*")([^"\n]*)(")'
+)
+_SECRET_BARE_RE = re.compile(
+    r'(?i)\b((?:password|passwd|secret|snmp_?community|community|auth_?password|'
+    r'privacy_?password|radius_?secret|token|api_?key)\s*[:=]\s*)([^\s,}"]+)'
+)
+
+
+def _redact_secrets(text):
+    if not text:
+        return text
+    text = _SECRET_LINE_RE.sub(lambda m: m.group(1) + "***REDACTED***" + m.group(3), text)
+    text = _SECRET_BARE_RE.sub(lambda m: m.group(1) + "***REDACTED***", text)
+    return text
+
+
+def _support_state_summary():
+    """Non-secret current-state lines for description.txt: schedule + last sync."""
+    lines = []
+    try:
+        cfg = load_config()
+        sch = cfg.get("schedule", {})
+        lines.append(f"- Schedule: {'enabled' if sch.get('enabled') else 'disabled'}"
+                     + (f" at {sch.get('time')}" if sch.get("time") else ""))
+        gen = cfg.get("general", {})
+        lines.append(f"- Log level: {gen.get('log_level', '?')}, retention {gen.get('retention_days', '?')} days")
+        lines.append(f"- Switch managers configured: {len(cfg.get('switch_managers') or [])}")
+    except Exception:
+        lines.append("- (config unavailable)")
+    try:
+        hist = get_history()
+        if hist:
+            h = hist[0]
+            when = datetime.fromtimestamp(h["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            line = (f"- Last sync: {when}, {'OK' if h.get('success') else 'FAILED'}, "
+                    f"triggered_by={h.get('triggered_by')}, dnac={h.get('dnac_count')}, "
+                    f"eyesight={h.get('eyesight_count')}, added={h.get('added')}, removed={h.get('removed')}")
+            if h.get("error"):
+                line += f", error={h.get('error')}"
+            lines.append(line)
+        else:
+            lines.append("- Last sync: (none recorded)")
+    except Exception:
+        lines.append("- Last sync: (history unavailable)")
+    return lines
+
+
+@app.route("/api/support_log", methods=["POST"])
+def api_support_log():
+    # JSON body (same reasoning as /api/config): _check_csrf() only reads request.form.
+    payload = request.get_json(silent=True) or {}
+    token = payload.pop("csrf_token", "")
+    if not (token and secrets.compare_digest(token, session.get("csrf_token", ""))):
+        return jsonify({"error": "Session expired -- please refresh and try again."}), 403
+    description = (payload.get("description") or "").strip()
+    generated_at = datetime.now(timezone.utc)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        info_lines = [
+            f"Generated: {generated_at.isoformat()}",
+            f"Remote address: {request.remote_addr}",
+            f"User agent: {request.headers.get('User-Agent', '')}",
+            f"App version: {APP_VERSION}",
+            f"Deployed at: {DEPLOYED_AT.isoformat()}",
+            "",
+            "Issue description:",
+            description or "(none provided)",
+            "",
+            "Current state:",
+        ] + _support_state_summary()
+        zf.writestr("description.txt", _redact_secrets("\n".join(info_lines)))
+
+        # Activity log -- logs actions + ip/profile/manager, never credential values by design.
+        if os.path.isfile(ACTIVITY_LOG_PATH):
+            try:
+                with open(ACTIVITY_LOG_PATH) as f:
+                    zf.writestr("activity_log.jsonl", _redact_secrets(f.read()))
+            except OSError:
+                pass
+
+        # Sync history -- per-run summaries (counts/outcome/error), no secrets.
+        try:
+            zf.writestr("history.json", _redact_secrets(json.dumps(get_history(), indent=1)))
+        except Exception:
+            pass
+
+        # Most recent run logs -- record IPs/hostnames/profiles/managers, never credentials.
+        try:
+            if os.path.isdir(_LOG_DIR):
+                recent = sorted(
+                    (fn for fn in os.listdir(_LOG_DIR) if fn.startswith("run_") and fn.endswith(".log")),
+                    reverse=True,
+                )[:20]
+                for fn in recent:
+                    try:
+                        with open(os.path.join(_LOG_DIR, fn)) as f:
+                            zf.writestr(f"logs/{fn}", _redact_secrets(f.read()))
+                    except OSError:
+                        continue
+        except OSError:
+            pass
+
+    with open(SUPPORT_LOG_PATH, "wb") as f:
+        f.write(buf.getvalue())
+
+    _log_activity("support_log_generated", username=session.get("username"),
+                  description_preview=description[:200])
+    return jsonify({
+        "ok": True,
+        "download_url": url_for("support_log_download_route"),
+        "filename": f"dnac-eyesight-support-{generated_at.strftime('%Y%m%d-%H%M%S')}.zip",
+    })
+
+
+@app.route("/support_log/download", methods=["GET"])
+def support_log_download_route():
+    if not os.path.isfile(SUPPORT_LOG_PATH):
+        return "No support log has been generated yet -- click Support Log and Generate first.", 404
+    return send_file(
+        SUPPORT_LOG_PATH, mimetype="application/zip", as_attachment=True,
+        download_name="dnac-eyesight-support-log.zip",
+    )
 
 
 if __name__ == "__main__":

@@ -8,6 +8,37 @@
 </head>
 <body>
     <script>const CSRF_TOKEN = {{ csrf_token|tojson }};</script>
+    <style>
+        .support-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .support-modal {
+            background: var(--panel, #1b2733); color: var(--text, #e6edf3);
+            border: 1px solid var(--border, #334); border-radius: 8px;
+            width: min(560px, 92vw); padding: 1.2rem 1.4rem; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .support-modal h3 { margin: 0 0 0.3rem; }
+        .support-modal textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+        .support-modal .support-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 0.9rem; }
+    </style>
+    <div id="support-log-modal" class="support-modal-overlay" style="display:none;">
+        <div class="support-modal">
+            <h3>Support log</h3>
+            <p class="hint" style="margin-top:0;">Describe the issue, then Generate a diagnostics bundle to send on.
+                Credentials are never included.</p>
+            <textarea id="support-log-description" rows="5"
+                placeholder="What were you trying to do, and what happened instead?"></textarea>
+            <div id="support-log-status" class="hint" style="min-height:1.2em;"></div>
+            <div id="support-log-result" style="display:none; margin-top:0.4rem;">
+                <a id="support-log-download-link" href="#" download>Download support log</a>
+            </div>
+            <div class="support-actions">
+                <button type="button" id="support-log-cancel" class="btn-secondary">Close</button>
+                <button type="button" id="support-log-generate">Generate</button>
+            </div>
+        </div>
+    </div>
     <div class="forescout-header">
         <img src="{{ url_for('static', filename='images/forescout-logo.png') }}" alt="Forescout">
         <div class="forescout-header-title">
@@ -22,6 +53,7 @@
                 &middot; <a href="{{ url_for('setup_route') }}">Setup</a>
                 &middot; <a href="{{ url_for('certs_route') }}">Certificates</a>
                 &middot; <a href="{{ url_for('change_password_route') }}">Change password</a>
+                &middot; <a href="#" id="openSupportLogBtn">Support Log</a>
                 &middot; <form method="post" action="/logout" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn-small btn-secondary">Logout</button></form>
             </div>
         </div>
@@ -655,6 +687,52 @@
                     .catch(() => {});
             }
             document.getElementById("history-refresh-btn").addEventListener("click", loadHistory);
+
+            // ---- Support log (David 2026-10-09): header link -> popup -> zip, same flow
+            // as the Forescout Tech Support Collector's Support Log. --------------------
+            (function wireSupportLog() {
+                const modal = document.getElementById("support-log-modal");
+                const openBtn = document.getElementById("openSupportLogBtn");
+                const cancelBtn = document.getElementById("support-log-cancel");
+                const genBtn = document.getElementById("support-log-generate");
+                const descEl = document.getElementById("support-log-description");
+                const statusEl = document.getElementById("support-log-status");
+                const resultEl = document.getElementById("support-log-result");
+                const linkEl = document.getElementById("support-log-download-link");
+                if (!modal || !openBtn) return;
+
+                function closeModal() { modal.style.display = "none"; }
+                openBtn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    statusEl.textContent = "";
+                    resultEl.style.display = "none";
+                    modal.style.display = "flex";
+                    descEl.focus();
+                });
+                cancelBtn.addEventListener("click", closeModal);
+                modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+
+                genBtn.addEventListener("click", () => {
+                    genBtn.disabled = true;
+                    statusEl.textContent = "Generating support log…";
+                    resultEl.style.display = "none";
+                    fetch("/api/support_log", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ csrf_token: CSRF_TOKEN, description: descEl.value }),
+                    })
+                        .then(r => r.json())
+                        .then(d => {
+                            genBtn.disabled = false;
+                            if (!d.ok) { statusEl.textContent = "Error: " + (d.error || "could not generate the support log."); return; }
+                            statusEl.textContent = "Support log ready.";
+                            linkEl.href = d.download_url;
+                            linkEl.setAttribute("download", d.filename || "dnac-eyesight-support-log.zip");
+                            resultEl.style.display = "";
+                        })
+                        .catch(err => { genBtn.disabled = false; statusEl.textContent = "Failed: " + err; });
+                });
+            })();
         })();
     </script>
 </body>
